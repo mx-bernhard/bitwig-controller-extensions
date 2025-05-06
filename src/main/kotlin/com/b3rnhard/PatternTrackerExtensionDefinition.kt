@@ -8,29 +8,24 @@ import java.util.*
 
 class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
 
-    override fun getName(): String = "pattern-tracker"
-
-    override fun getAuthor(): String = "b3rnhard"
-
-    override fun getVersion(): String = "0.1" // TODO: Consider getting this from pom.xml
-
+    // Metadata from TypeScript
+    override fun getName(): String = "Tracker Pattern Trigger" // Updated name
+    override fun getAuthor(): String = "b3rnhard" // Kept original author
+    override fun getVersion(): String = SCRIPT_VERSION
     override fun getId(): UUID = DRIVER_ID
+    override fun getHardwareVendor(): String = "Generic" // From TS
+    override fun getHardwareModel(): String = "Tracker Pattern Trigger" // Match name
+    override fun getRequiredAPIVersion(): Int = 19 // From TS loadAPI(19)
 
-    override fun getHardwareVendor(): String = "b3rnhard"
-
-    override fun getHardwareModel(): String = "pattern-tracker"
-
-    override fun getRequiredAPIVersion(): Int = 22 // TODO: Consider getting this from pom.xml dependency
-
+    // Ports (from TS)
     override fun getNumMidiInPorts(): Int = 0
-
     override fun getNumMidiOutPorts(): Int = 0
 
     override fun listAutoDetectionMidiPortNames(
         list: AutoDetectionMidiPortNamesList,
         platformType: PlatformType
     ) {
-        // No auto-detection needed
+        // No auto-detection needed (as per TS)
     }
 
     override fun createInstance(host: ControllerHost): PatternTrackerExtension {
@@ -38,7 +33,14 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
     }
 
     companion object {
-        // Define the private static final UUID as a companion object property
+        // Use const val for compile-time constants where possible
+        const val SCRIPT_VERSION = "0.1.15"
+        const val DEVICES_GROUP_NAME = "Devices"
+        const val FIRE_PATTERN_GROUP_NAME = "Patterns"
+        const val MAX_TRACKS = 2 // Max tracks to search in child banks (as per TS)
+        const val MAX_SLOTS = 2 // Max slots per track (as per TS)
+
+        // Keep the original UUID
         private val DRIVER_ID: UUID = UUID.fromString("b243d28b-6d55-4184-9caa-55ce3cf5c061")
     }
 } 
