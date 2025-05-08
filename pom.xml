@@ -125,5 +125,63 @@
 		</plugins>
 	</build>
 
+	<profiles>
+		<profile>
+			<id>deploy-to-bitwig</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-antrun-plugin</artifactId>
+						<version>3.0.0</version> 
+						<executions>
+							<execution>
+								<id>copy-bwextension</id>
+								<phase>install</phase> 
+								<goals>
+									<goal>run</goal>
+								</goals>
+								<configuration>
+									<target>
+										<property environment="env"/>
+										<!-- Attempt to set target.dir from system property -->
+										<condition property="target.dir" value="${bitwig.scripts.dir}">
+											<isset property="bitwig.scripts.dir"/>
+										</condition>
+
+										<!-- If system property was not set, attempt to set target.dir from environment variable -->
+										<condition property="target.dir" value="${env.BITWIG_SCRIPTS_DIR}">
+											<and>
+												<not><isset property="target.dir"/></not> <!-- Only if target.dir is not already set by system property -->
+												<isset property="env.BITWIG_SCRIPTS_DIR"/>
+											</and>
+										</condition>
+
+										<!-- Fail if target.dir is still not set or is empty -->
+										<fail message="BITWIG_SCRIPTS_DIR environment variable or bitwig.scripts.dir system property must be set and not empty.">
+											<condition>
+												<or>
+													<not><isset property="target.dir"/></not>
+													<equals arg1="${target.dir}" arg2="" trim="true"/>
+												</or>
+											</condition>
+										</fail>
+
+										<echo message="Target Bitwig Scripts Directory is set to: ${target.dir}"/>
+										<mkdir dir="${target.dir}"/>
+										<copy file="${project.build.directory}/PatternTracker.bwextension"
+											  tofile="${target.dir}/PatternTracker.bwextension"
+											  overwrite="true" />
+										<echo message="Copied PatternTracker.bwextension to ${target.dir}"/>
+									</target>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 </project>
 

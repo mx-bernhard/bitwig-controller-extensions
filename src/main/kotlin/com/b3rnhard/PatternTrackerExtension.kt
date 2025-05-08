@@ -164,7 +164,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                         return@forEach // continue
                     }
 
-                    val parentStateMap = fireSlotsState.computeIfAbsent(parentTrackIndex) { mutableMapOf() }
+                    val parentStateMap = fireSlotsState.getOrPut(parentTrackIndex) { mutableMapOf() }
 
                     childrenOfGroup.forEach { (childIndex: Int, childTrack: Track) ->
                         if (!childTrack.exists().get() || childTrack.isGroup().get()) {
@@ -180,7 +180,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                             return@forEach // continue inner loop
                         }
 
-                        val patternTrackStateMap = parentStateMap.computeIfAbsent(childIndex) { mutableMapOf() }
+                        val patternTrackStateMap = parentStateMap.getOrPut(childIndex) { mutableMapOf() }
 
                         slotsOfChild.forEach { (slotIndex: Int, slot: ClipLauncherSlot) ->
                             if (!slot.exists().get()) {
@@ -190,7 +190,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                             val slotName = slot.name().get()
                             println("      Slot $slotIndex: Name=\"$slotName\" (Exists: ${slot.exists().get()})")
 
-                            val patternSlotState = patternTrackStateMap.computeIfAbsent(slotIndex) { FireSlotState() }
+                            val patternSlotState = patternTrackStateMap.getOrPut(slotIndex) { FireSlotState() }
 
                             if (patternSlotState.name != slotName) {
                                 println("        Updating stored name for [$parentTrackIndex, $childIndex, $slotIndex] from \"${patternSlotState.name}\" to \"$slotName\"")
@@ -268,8 +268,8 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
             val trackIndex = i
 
             topLevelTracks[trackIndex] = track
-            childTracks.computeIfAbsent(trackIndex) { mutableMapOf() }
-            childSlots.computeIfAbsent(trackIndex) { mutableMapOf() }
+            childTracks.getOrPut(trackIndex) { mutableMapOf() }
+            childSlots.getOrPut(trackIndex) { mutableMapOf() }
             val currentChildTrackMap = childTracks[trackIndex]!!
             val currentChildSlotMap = childSlots[trackIndex]!!
 
@@ -286,7 +286,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                     val childIndex = j
 
                     currentChildTrackMap[childIndex] = childTrack
-                    currentChildSlotMap.computeIfAbsent(childIndex) { mutableMapOf() }
+                    currentChildSlotMap.getOrPut(childIndex) { mutableMapOf() }
                     val currentSlotMap = currentChildSlotMap[childIndex]!!
 
                     childTrack.exists().markInterested()
@@ -328,9 +328,9 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
                         val setupPatternObserverState = { ->
                             fireSlotsState
-                                .computeIfAbsent(fireParentTrackIndex) { mutableMapOf() }
-                                .computeIfAbsent(fireChildTrackIndex) { mutableMapOf() }
-                                .computeIfAbsent(slotIndex) { FireSlotState() }
+                                .getOrPut(fireParentTrackIndex) { mutableMapOf() }
+                                .getOrPut(fireChildTrackIndex) { mutableMapOf() }
+                                .getOrPut(slotIndex) { FireSlotState() }
                         }
 
                         slot.name().addValueObserver { name ->
