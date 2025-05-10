@@ -34,7 +34,7 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
 
     companion object {
         // Use const val for compile-time constants where possible
-        const val SCRIPT_VERSION = "0.1.15"
+        const val SCRIPT_VERSION = "0.2.0"
         const val DEVICES_GROUP_NAME = "Devices"
         const val FIRE_PATTERN_GROUP_NAME = "Patterns"
         const val MAX_TRACKS = 2 // Max tracks to search in child banks (as per TS)

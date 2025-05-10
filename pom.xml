@@ -94,6 +94,30 @@
 					<maxmem>1024m</maxmem>
 				</configuration>
 			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.5.1</version>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<minimizeJar>true</minimizeJar>
+							<artifactSet>
+								<includes>
+									<include>org.jetbrains.kotlin:kotlin-stdlib</include>
+									<include>org.jetbrains.kotlin:kotlin-stdlib-common</include>
+									<include>org.jetbrains:annotations</include>
+								</includes>
+							</artifactSet>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -122,6 +146,7 @@
 					</execution>
 				</executions>
 			</plugin>
+
 		</plugins>
 	</build>
 
