@@ -61,7 +61,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         }
     }
 
-    private fun findAndStopDeviceClip(deviceSlot: ClipLauncherSlot, fireClipName: String) {
+    private fun findAndStopDeviceClip(fireClipName: String) {
         val deviceInfo = deviceClipMap[fireClipName]
         try {
             if (deviceInfo?.track?.exists()?.get() == true) {
@@ -97,10 +97,10 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         try {
             host.println("Remap: Iterating through ${topLevelTracks.size} stored top-level tracks.")
 
-            topLevelTracks.forEach { (trackIndex: Int, track: Track) ->
+            topLevelTracks.forEach topLevel@{ (trackIndex: Int, track: Track) ->
                 if (!track.exists().get()) {
                     host.println("Remap: Skipping non-existent top-level track index $trackIndex")
-                    return@forEach // continue
+                    return@topLevel // continue
                 }
 
                 val trackName = track.name().get()
@@ -116,13 +116,13 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
                     if (childrenOfGroup == null || slotsOfGroup == null) {
                         host.println("    WARN: No stored child tracks or slots found for Devices group index $trackIndex")
-                        return@forEach // continue
+                        return@topLevel // continue
                     }
 
-                    childrenOfGroup.forEach { (childIndex: Int, childTrack: Track) ->
+                    childrenOfGroup.forEach deviceChild@{ (childIndex: Int, childTrack: Track) ->
                         if (!childTrack.exists().get() || childTrack.isGroup().get()) {
                             host.println("    Skipping non-existent or nested group child track index $childIndex")
-                            return@forEach // continue inner loop
+                            return@deviceChild // continue inner loop
                         }
                         val childTrackName = childTrack.name().get()
                         host.println("    Devices Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${childTrack.exists().get()})")
@@ -130,13 +130,13 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
                         if (slotsOfChild == null) {
                             host.println("      WARN: No stored slots found for Devices child track index $childIndex")
-                            return@forEach // continue inner loop
+                            return@deviceChild // continue inner loop
                         }
 
-                        slotsOfChild.forEach { (slotIndex: Int, slot: ClipLauncherSlot) ->
+                        slotsOfChild.forEach deviceSlot@{ (slotIndex: Int, slot: ClipLauncherSlot) ->
                             if (!slot.exists().get()) {
                                 host.println("        Skipping non-existent slot index $slotIndex")
-                                return@forEach // continue innermost loop
+                                return@deviceSlot // continue innermost loop
                             }
                             val slotName = slot.name().get()
                             val hasContent = slot.hasContent().get()
@@ -161,15 +161,15 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
                     if (childrenOfGroup == null || slotsOfGroup == null) {
                         host.println("    WARN: No stored child tracks or slots found for Patterns group index $parentTrackIndex")
-                        return@forEach // continue
+                        return@topLevel // continue
                     }
 
                     val parentStateMap = fireSlotsState.getOrPut(parentTrackIndex) { mutableMapOf() }
 
-                    childrenOfGroup.forEach { (childIndex: Int, childTrack: Track) ->
+                    childrenOfGroup.forEach patternChild@{ (childIndex: Int, childTrack: Track) ->
                         if (!childTrack.exists().get() || childTrack.isGroup().get()) {
                             host.println("    Skipping non-existent or nested group child track index $childIndex")
-                            return@forEach // continue inner loop
+                            return@patternChild // continue inner loop
                         }
                         val childTrackName = childTrack.name().get()
                         host.println("    Patterns Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${childTrack.exists().get()})")
@@ -177,15 +177,15 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
                         if (slotsOfChild == null) {
                             host.println("      WARN: No stored slots found for Patterns child track index $childIndex")
-                            return@forEach // continue inner loop
+                            return@patternChild // continue inner loop
                         }
 
                         val patternTrackStateMap = parentStateMap.getOrPut(childIndex) { mutableMapOf() }
 
-                        slotsOfChild.forEach { (slotIndex: Int, slot: ClipLauncherSlot) ->
+                        slotsOfChild.forEach patternSlot@{ (slotIndex: Int, slot: ClipLauncherSlot) ->
                             if (!slot.exists().get()) {
                                 host.println("        Skipping non-existent slot index $slotIndex")
-                                return@forEach // continue innermost loop
+                                return@patternSlot // continue innermost loop
                             }
                             val slotName = slot.name().get()
                             host.println("      Slot $slotIndex: Name=\"$slotName\" (Exists: ${slot.exists().get()})")
@@ -519,7 +519,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 val activeDeviceSlot = slotState.deviceSlot
                 if (activeDeviceSlot != null) {
                     host.println("   -> Associated deviceSlot found. Stopping device clip.")
-                    findAndStopDeviceClip(activeDeviceSlot, slotState.name)
+                    findAndStopDeviceClip(slotState.name)
                     slotState.deviceSlot = null
                 } else {
                     host.println("   -> No active deviceSlot recorded. Attempting track stop based on current name mapping.")
