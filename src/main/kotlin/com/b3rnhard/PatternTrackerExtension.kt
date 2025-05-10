@@ -78,7 +78,40 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         }
     }
 
-    // --- Remapping Function ---
+    // Helper to process group children and slots
+    private fun processGroupChildren(
+        groupName: String,
+        groupIndex: Int,
+        childrenOfGroup: Map<Int, Track>?,
+        slotsOfGroup: Map<Int, Map<Int, ClipLauncherSlot>>?,
+        slotLogic: (childTrack: Track, childIndex: Int, slot: ClipLauncherSlot, slotIndex: Int) -> Unit
+    ) {
+        if (childrenOfGroup == null || slotsOfGroup == null) {
+            host.println("    WARN: No stored child tracks or slots found for $groupName group index $groupIndex")
+            return
+        }
+        childrenOfGroup.forEach groupChild@{ (childIndex, childTrack) ->
+            if (!childTrack.exists().get() || childTrack.isGroup().get()) {
+                host.println("    Skipping non-existent or nested group child track index $childIndex")
+                return@groupChild
+            }
+            val childTrackName = childTrack.name().get()
+            host.println("    $groupName Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${childTrack.exists().get()})")
+            val slotsOfChild = slotsOfGroup[childIndex]
+            if (slotsOfChild == null) {
+                host.println("      WARN: No stored slots found for $groupName child track index $childIndex")
+                return@groupChild
+            }
+            slotsOfChild.forEach groupSlot@{ (slotIndex, slot) ->
+                if (!slot.exists().get()) {
+                    host.println("        Skipping non-existent slot index $slotIndex")
+                    return@groupSlot
+                }
+                slotLogic(childTrack, childIndex, slot, slotIndex)
+            }
+        }
+    }
+
     private fun remapClips() {
         host.println("--- Starting Manual Clip Remapping ---")
         deviceClipMap.clear()
@@ -96,113 +129,58 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
         try {
             host.println("Remap: Iterating through ${topLevelTracks.size} stored top-level tracks.")
-
-            topLevelTracks.forEach topLevel@{ (trackIndex: Int, track: Track) ->
+            topLevelTracks.forEach { (trackIndex, track) ->
                 if (!track.exists().get()) {
                     host.println("Remap: Skipping non-existent top-level track index $trackIndex")
-                    return@topLevel // continue
+                    return@forEach
                 }
-
                 val trackName = track.name().get()
                 val isGroup = track.isGroup().get()
                 host.println("Remap: Processing stored top-level track $trackIndex: Name=\"$trackName\", IsGroup=$isGroup")
-
-                // --- DEVICES Group Logic ---
                 if (isGroup && trackName == DEVICES_GROUP_NAME) {
                     deviceGroupFound = true
                     host.println("  -> Found DEVICES group (Index $trackIndex). Processing stored children.")
-                    val childrenOfGroup = childTracks[trackIndex]
-                    val slotsOfGroup = childSlots[trackIndex]
-
-                    if (childrenOfGroup == null || slotsOfGroup == null) {
-                        host.println("    WARN: No stored child tracks or slots found for Devices group index $trackIndex")
-                        return@topLevel // continue
-                    }
-
-                    childrenOfGroup.forEach deviceChild@{ (childIndex: Int, childTrack: Track) ->
-                        if (!childTrack.exists().get() || childTrack.isGroup().get()) {
-                            host.println("    Skipping non-existent or nested group child track index $childIndex")
-                            return@deviceChild // continue inner loop
-                        }
-                        val childTrackName = childTrack.name().get()
-                        host.println("    Devices Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${childTrack.exists().get()})")
-                        val slotsOfChild = slotsOfGroup[childIndex]
-
-                        if (slotsOfChild == null) {
-                            host.println("      WARN: No stored slots found for Devices child track index $childIndex")
-                            return@deviceChild // continue inner loop
-                        }
-
-                        slotsOfChild.forEach deviceSlot@{ (slotIndex: Int, slot: ClipLauncherSlot) ->
-                            if (!slot.exists().get()) {
-                                host.println("        Skipping non-existent slot index $slotIndex")
-                                return@deviceSlot // continue innermost loop
+                    processGroupChildren(
+                        DEVICES_GROUP_NAME,
+                        trackIndex,
+                        childTracks[trackIndex],
+                        childSlots[trackIndex]
+                    ) { childTrack, _, slot, slotIndex ->
+                        val slotName = slot.name().get()
+                        val hasContent = slot.hasContent().get()
+                        host.println("      Slot $slotIndex: Name=\"$slotName\", HasContent=$hasContent (Exists: ${slot.exists().get()})")
+                        if (hasContent && slotName.isNotEmpty()) {
+                            if (deviceClipMap.containsKey(slotName)) {
+                                host.println("        WARN: Duplicate device clip name found: \"$slotName\" on track \"${childTrack.name().get()}\". Overwriting.")
                             }
-                            val slotName = slot.name().get()
-                            val hasContent = slot.hasContent().get()
-                            host.println("      Slot $slotIndex: Name=\"$slotName\", HasContent=$hasContent (Exists: ${slot.exists().get()})")
-
-                            if (hasContent && slotName.isNotEmpty()) {
-                                if (deviceClipMap.containsKey(slotName)) {
-                                    host.println("        WARN: Duplicate device clip name found: \"$slotName\" on track \"$childTrackName\". Overwriting.")
-                                }
-                                host.println("        Mapping device clip: \"$slotName\" to track \"$childTrackName\" (Track Obj: Exists)")
-                                deviceClipMap[slotName] = DeviceSlotInfo(slot, childTrack)
-                            }
+                            host.println("        Mapping device clip: \"$slotName\" to track \"${childTrack.name().get()}\" (Track Obj: Exists)")
+                            deviceClipMap[slotName] = DeviceSlotInfo(slot, childTrack)
                         }
                     }
-                // --- PATTERNS Group Logic ---
                 } else if (isGroup && trackName == FIRE_PATTERN_GROUP_NAME) {
                     patternGroupFound = true
                     val parentTrackIndex = trackIndex
                     host.println("  -> Found PATTERNS group (Index $parentTrackIndex). Processing stored children.")
-                    val childrenOfGroup = childTracks[parentTrackIndex]
-                    val slotsOfGroup = childSlots[parentTrackIndex]
-
-                    if (childrenOfGroup == null || slotsOfGroup == null) {
-                        host.println("    WARN: No stored child tracks or slots found for Patterns group index $parentTrackIndex")
-                        return@topLevel // continue
-                    }
-
                     val parentStateMap = fireSlotsState.getOrPut(parentTrackIndex) { mutableMapOf() }
-
-                    childrenOfGroup.forEach patternChild@{ (childIndex: Int, childTrack: Track) ->
-                        if (!childTrack.exists().get() || childTrack.isGroup().get()) {
-                            host.println("    Skipping non-existent or nested group child track index $childIndex")
-                            return@patternChild // continue inner loop
-                        }
-                        val childTrackName = childTrack.name().get()
-                        host.println("    Patterns Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${childTrack.exists().get()})")
-                        val slotsOfChild = slotsOfGroup[childIndex]
-
-                        if (slotsOfChild == null) {
-                            host.println("      WARN: No stored slots found for Patterns child track index $childIndex")
-                            return@patternChild // continue inner loop
-                        }
-
+                    processGroupChildren(
+                        FIRE_PATTERN_GROUP_NAME,
+                        parentTrackIndex,
+                        childTracks[parentTrackIndex],
+                        childSlots[parentTrackIndex]
+                    ) { _, childIndex, slot, slotIndex ->
+                        val slotName = slot.name().get()
+                        host.println("      Slot $slotIndex: Name=\"$slotName\" (Exists: ${slot.exists().get()})")
                         val patternTrackStateMap = parentStateMap.getOrPut(childIndex) { mutableMapOf() }
-
-                        slotsOfChild.forEach patternSlot@{ (slotIndex: Int, slot: ClipLauncherSlot) ->
-                            if (!slot.exists().get()) {
-                                host.println("        Skipping non-existent slot index $slotIndex")
-                                return@patternSlot // continue innermost loop
-                            }
-                            val slotName = slot.name().get()
-                            host.println("      Slot $slotIndex: Name=\"$slotName\" (Exists: ${slot.exists().get()})")
-
-                            val patternSlotState = patternTrackStateMap.getOrPut(slotIndex) { FireSlotState() }
-
-                            if (patternSlotState.name != slotName) {
-                                host.println("        Updating stored name for [$parentTrackIndex, $childIndex, $slotIndex] from \"${patternSlotState.name}\" to \"$slotName\"")
-                                patternSlotState.name = slotName
-                            } else {
-                                host.println("        Stored name for [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") matches current name (\"$slotName\"). No update needed.")
-                            }
-
-                            if (patternSlotState.name.isNotEmpty() && patternSlotState.isPlaying == true && deviceClipMap.containsKey(patternSlotState.name)) {
-                                host.println("        Remap Check: Pattern slot [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") is playing and device mapped. Triggering launch.")
-                                patternSlotState.deviceSlot = findAndLaunchDeviceClip(patternSlotState.name)
-                            }
+                        val patternSlotState = patternTrackStateMap.getOrPut(slotIndex) { FireSlotState() }
+                        if (patternSlotState.name != slotName) {
+                            host.println("        Updating stored name for [$parentTrackIndex, $childIndex, $slotIndex] from \"${patternSlotState.name}\" to \"$slotName\"")
+                            patternSlotState.name = slotName
+                        } else {
+                            host.println("        Stored name for [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") matches current name (\"$slotName\"). No update needed.")
+                        }
+                        if (patternSlotState.name.isNotEmpty() && patternSlotState.isPlaying == true && deviceClipMap.containsKey(patternSlotState.name)) {
+                            host.println("        Remap Check: Pattern slot [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") is playing and device mapped. Triggering launch.")
+                            patternSlotState.deviceSlot = findAndLaunchDeviceClip(patternSlotState.name)
                         }
                     }
                 }
@@ -211,14 +189,12 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
             host.println("!!! Error during manual clip remapping: ${e.message}")
             e.printStackTrace()
         }
-
         if (!deviceGroupFound) {
             host.println("WARN: '$DEVICES_GROUP_NAME' group track not found during remap.")
         }
         if (!patternGroupFound) {
             host.println("WARN: '$FIRE_PATTERN_GROUP_NAME' group track not found during remap.")
         }
-
         host.println("--- Manual Clip Remapping Finished. Device clips mapped: ${deviceClipMap.size} ---")
         host.println("--- Mapped Device Clips ---")
         deviceClipMap.forEach { (key: String, value: DeviceSlotInfo) ->
