@@ -42,6 +42,10 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
   private var numTracks: Int = 2
   private var numRootTracks: Int = 2
   private var numSlots: Int = 2
+  private var stopKeyword: String = "[stop]"
+
+  // --- Transport State ---
+  private var isTransportPlaying: Boolean = false
 
   // --- Helper Functions ---
 
@@ -277,6 +281,12 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
       "",
       5.0
     )
+    val stopKeywordSetting = preferences.getStringSetting(
+      "Pattern",
+      "Stop Keyword",
+      1024,
+      "[stop]"
+    )
 
     fun addObserverForSetting(name: String, writeValue: (newValue: Int) -> Unit, setting: SettableRangedValue) {
       setting.addRawValueObserver { value: Double ->
@@ -291,7 +301,15 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     addObserverForSetting("tracks", { numTracks = it }, tracksSetting)
     addObserverForSetting("slots", { numSlots = it }, slotsSetting)
     addObserverForSetting("root groups", { numRootTracks = it }, rootGroupsSetting)
-    host.println("Tracks: $numTracks, Slots: $numSlots, Root groups: $numRootTracks")
+
+    stopKeywordSetting.addValueObserver { value ->
+      stopKeyword = value
+      host.println("Stop keyword changed to \"$value\"")
+    }
+    // Initialize stopKeyword with the preference value
+    stopKeyword = stopKeywordSetting.get()
+
+    host.println("Tracks: $numTracks, Slots: $numSlots, Root groups: $numRootTracks, Stop keyword: \"$stopKeyword\"")
   }
 
   override fun init() {
@@ -299,6 +317,17 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     host.println("Version: $SCRIPT_VERSION")
     host.println("Initializing with host: ${host.javaClass.name}")
     try {
+      // --- Setup Transport Observer ---
+      val transport = host.createTransport()
+      transport.isPlaying().markInterested()
+      transport.isPlaying().addValueObserver { playing ->
+        host.println("Transport isPlaying changed: $playing")
+        isTransportPlaying = playing
+        handleTransportStateChange(playing)
+      }
+      isTransportPlaying = transport.isPlaying().get() // Initial state
+      host.println("Initial Transport State: isPlaying=$isTransportPlaying")
+
       setupSettings()
       // --- Setup Action Button ---
       host.println("Setting up remap action button...")
@@ -528,6 +557,67 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     }
   }
 
+  // Helper to handle stop command logic
+  private fun handleStopCommand(slotState: FireSlotState, name: String): Boolean {
+    if (!name.startsWith(stopKeyword)) {
+        return false // Not a stop command
+    }
+
+    val trackName = name.substring(stopKeyword.length).trim()
+    if (trackName.isNotEmpty()) {
+        host.println("   -> Stop command detected for track \"$trackName\".")
+        val deviceInfo = deviceClipMap.values.find { info -> info.track.name().get() == trackName }
+        if (deviceInfo != null) {
+            host.println("   -> Found device track. Stopping playback.")
+            deviceInfo.track.stop()
+        } else {
+            host.println("   -> Could not find device track named \"$trackName\".")
+        }
+    } else {
+        host.println("   -> Invalid stop command format. Expected \"$stopKeyword<TrackName>\".")
+    }
+    slotState.deviceSlot = null // Clear associated device slot regardless of success
+    return true // Stop command was handled (or attempted)
+  }
+
+  // Helper to handle launch command logic
+  private fun handleLaunchCommand(slotState: FireSlotState, name: String) {
+      if (!isTransportPlaying) {
+          host.println("   -> Transport not playing. Launch postponed for device clip \"$name\".")
+          return // Don't launch if transport is stopped
+      }
+      val isDeviceMapped = deviceClipMap.containsKey(name)
+      host.println("   -> Play event check on name change. (Transport Playing: $isTransportPlaying, Name Known: true, Device Mapped: $isDeviceMapped)")
+      if (isDeviceMapped) {
+          host.println("   -> Preconditions met. Launching device clip \"$name\".")
+          slotState.deviceSlot = findAndLaunchDeviceClip(name)
+      } else {
+          host.println("   -> Launch postponed: Device clip \"$name\" not yet mapped.")
+      }
+  }
+
+  // --- Transport State Change Handler ---
+  private fun handleTransportStateChange(transportIsPlaying: Boolean) {
+    host.println("Handling transport state change. Transport isPlaying: $transportIsPlaying")
+    fireSlotsState.forEach { (_, parentMap) ->
+      parentMap.forEach { (_, childMap) ->
+        childMap.forEach { (_, slotState) ->
+          if (slotState.isPlaying == true && slotState.name.isNotEmpty() && slotState.name != stopKeyword) {
+            if (transportIsPlaying) {
+              host.println("   Transport started. Re-triggering device clip for pattern: ${slotState.name}")
+              slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
+            } else {
+              host.println("   Transport stopped. Stopping device clip for pattern: ${slotState.name}")
+              findAndStopDeviceClip(slotState.name)
+              // We keep slotState.deviceSlot as is, because the pattern slot itself is still "playing"
+              // and should resume if transport starts again, unless the pattern slot itself stops.
+            }
+          }
+        }
+      }
+    }
+  }
+
   private fun setupFireSlotNameLogic(
     slotState: FireSlotState,
     name: String,
@@ -541,16 +631,19 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
       host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] name changed from \"${oldName.ifEmpty { "<init>" }}\" to \"${name.ifEmpty { "<empty>" }}\"")
 
-      if (name.isNotEmpty() && slotState.isPlaying == true) {
-        val isDeviceMapped = deviceClipMap.containsKey(name)
-        host.println("   -> Play event check on name change. (Name Known: true, Device Mapped: $isDeviceMapped)")
-        if (isDeviceMapped) {
-          host.println("   -> Preconditions met. Launching device clip \"$name\".")
-          slotState.deviceSlot = findAndLaunchDeviceClip(name)
-        } else {
-          host.println("   -> Launch postponed: Device clip \"$name\" not yet mapped.")
-        }
+      // Only process if the slot is currently playing and has a name
+      if (name.isEmpty() || slotState.isPlaying != true) {
+          return
       }
+
+      // Try to handle as a stop command first
+      if (handleStopCommand(slotState, name)) {
+          return // Stop command handled, nothing more to do
+      }
+
+      // If not a stop command, handle as a potential launch command
+      handleLaunchCommand(slotState, name)
+
     } catch (e: Exception) {
       host.println("Error in fire slot name logic: ${e.message}")
     }
@@ -564,65 +657,60 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     slotIndex: Int
   ) {
     try {
+      // --- Initial State Handling ---
       if (slotState.isPlaying == null) {
         slotState.isPlaying = isPlaying
         host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] initial isPlaying state: $isPlaying")
         if (isPlaying) {
           val isNameKnown = slotState.name.isNotEmpty()
           val isDeviceMapped = isNameKnown && deviceClipMap.containsKey(slotState.name)
-          host.println("   -> Initial state is playing. Checking preconditions (Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
-          if (isNameKnown && isDeviceMapped) {
+          host.println("   -> Initial state is playing. Checking preconditions (Transport Playing: $isTransportPlaying, Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
+          if (isNameKnown && isDeviceMapped && isTransportPlaying) { // Check transport state
             host.println("   -> Preconditions met for initial state. Launching device clip \"${slotState.name}\".")
             slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
           } else {
-            host.println("   -> Preconditions not met for initial state launch.")
+            host.println("   -> Preconditions not met for initial state launch (Transport Playing: $isTransportPlaying).")
           }
         }
         return
       }
 
-      if (isPlaying == slotState.isPlaying) return
+      // --- State Change Handling ---
+      if (isPlaying == slotState.isPlaying) return // No change
 
       slotState.isPlaying = isPlaying
-
       val currentName = slotState.name.ifEmpty { "<name unknown>" }
       host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] \"$currentName\" isPlaying changed to: $isPlaying")
 
       if (isPlaying) {
+        // --- Handle Play Event ---
         val isNameKnown = slotState.name.isNotEmpty()
         val isDeviceMapped = isNameKnown && deviceClipMap.containsKey(slotState.name)
-        host.println("   -> Play event. Checking preconditions (Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
-        if (isNameKnown && isDeviceMapped) {
+        host.println("   -> Play event. Checking preconditions (Transport Playing: $isTransportPlaying, Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
+        if (isNameKnown && isDeviceMapped && isTransportPlaying) { // Check transport state
           host.println("   -> Preconditions met. Launching device clip \"${slotState.name}\".")
           slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
         } else {
-          host.println("   -> Launch postponed: Device clip \"${slotState.name}\" not yet mapped.")
+          host.println("   -> Launch postponed: Device clip \"${slotState.name}\" not yet mapped or transport stopped.")
         }
       } else {
-        host.println("   -> Stop event for \"$currentName\"")
-        val activeDeviceSlot = slotState.deviceSlot
-        if (activeDeviceSlot != null) {
-          host.println("   -> Associated deviceSlot found. Stopping device clip.")
-          findAndStopDeviceClip(slotState.name)
-          slotState.deviceSlot = null
-        } else {
-          host.println("   -> No active deviceSlot recorded. Attempting track stop based on current name mapping.")
-          if (slotState.name.isNotEmpty()) {
-            val deviceInfo = deviceClipMap[slotState.name]
-            if (deviceInfo?.track?.exists()?.get() == true) {
-              host.println(
-                "   -> Stopping track \"${
-                  deviceInfo.track.name().get()
-                }\" based on current mapping for \"${slotState.name}\"."
-              )
-              deviceInfo.track.stop()
-            } else {
-              host.println("   -> Could not find track to stop based on name \"${slotState.name}\".")
-            }
-          } else {
-            host.println("   -> Cannot stop track as pattern clip name is unknown.")
-          }
+        // --- Handle Stop Event ---
+        host.println("   -> Stop event for pattern \"$currentName\"")
+
+        // If this was a stop command clip finishing, we don't need to do anything further
+        if (currentName.startsWith(stopKeyword)) {
+            host.println("   -> Stop command clip finished. No further action needed.")
+            slotState.deviceSlot = null // Ensure reference is cleared
+            return
         }
+
+        // Otherwise, stop the associated device clip regardless of transport state
+        findAndStopDeviceClip(slotState.name)
+        slotState.deviceSlot = null // Clear the reference as this pattern slot stopped
+
+        // Note: We removed the complex logic trying to find the track via name again,
+        // as findAndStopDeviceClip should handle the case where the name->device mapping exists.
+        // If slotState.deviceSlot was already null, findAndStopDeviceClip uses the name mapping.
       }
     } catch (e: Exception) {
       host.println("Error in fire slot isPlaying logic: ${e.message}")
