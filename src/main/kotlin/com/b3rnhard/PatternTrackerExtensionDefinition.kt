@@ -34,11 +34,11 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
 
     companion object {
         // Use const val for compile-time constants where possible
-        const val SCRIPT_VERSION = "0.2.0"
+        const val SCRIPT_VERSION = "0.2.1"
         const val DEVICES_GROUP_NAME = "Devices"
         const val FIRE_PATTERN_GROUP_NAME = "Patterns"
-        const val MAX_TRACKS = 2 // Max tracks to search in child banks (as per TS)
-        const val MAX_SLOTS = 2 // Max slots per track (as per TS)
+        const val MAX_TRACKS = 5 // Max tracks to search in child banks (as per TS)
+        const val MAX_SLOTS = 5 // Max slots per track (as per TS)
 
         // Keep the original UUID
         private val DRIVER_ID: UUID = UUID.fromString("b243d28b-6d55-4184-9caa-55ce3cf5c061")
