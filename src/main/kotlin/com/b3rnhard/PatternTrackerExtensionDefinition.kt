@@ -15,7 +15,7 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
     override fun getId(): UUID = DRIVER_ID
     override fun getHardwareVendor(): String = "Generic" // From TS
     override fun getHardwareModel(): String = "Tracker Pattern Trigger" // Match name
-    override fun getRequiredAPIVersion(): Int = 19 // From TS loadAPI(19)
+    override fun getRequiredAPIVersion(): Int = 22
 
     // Ports (from TS)
     override fun getNumMidiInPorts(): Int = 0
