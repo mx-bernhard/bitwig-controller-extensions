@@ -3,11 +3,15 @@ package com.b3rnhard
 import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.DEVICES_GROUP_NAME
 import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.FIRE_PATTERN_GROUP_NAME
 import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.SCRIPT_VERSION
+
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.api.ClipLauncherSlot
 import com.bitwig.extension.controller.api.ControllerHost
 import com.bitwig.extension.controller.api.SettableRangedValue
 import com.bitwig.extension.controller.api.Track
+import com.bitwig.extension.controller.api.DocumentState
+import com.bitwig.extension.controller.api.SceneBank
+import com.bitwig.extension.controller.api.ClipLauncherSlotBank
 
 // --- Helper Data Classes (Moved outside the main class) ---
 data class DeviceSlotInfo(val slot: ClipLauncherSlot, val track: Track)
@@ -46,6 +50,9 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
   // --- Transport State ---
   private var isTransportPlaying: Boolean = false
+
+  // New setting state for keeping device clips playing
+  private var keepDevicesPlayingOnPatternStop = false
 
   // --- Helper Functions ---
 
@@ -303,12 +310,31 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     stopKeyword = stopKeywordSetting.get()
 
     host.println("Tracks: $numTracks, Slots: $numSlots, Root groups: $numRootTracks, Stop keyword: \"$stopKeyword\"")
+
+    // --- New Setting: Keep Devices Playing on Pattern Stop (Using EnumSetting) ---
+    val documentState = host.documentState
+    val keepDevicesPlayingEnumSetting = documentState.getEnumSetting(
+        "Keep Devices Playing on Pattern Stop", // Name
+        "Mapping", // Category
+        arrayOf("DISABLED", "ENABLED"), // Enum values
+        "DISABLED" // Default value
+    )
+
+    keepDevicesPlayingEnumSetting.addValueObserver { value ->
+        keepDevicesPlayingOnPatternStop = (value == "ENABLED")
+        host.showPopupNotification("Keep Devices Playing: $value") // Show the actual enum value
+        host.println("Setting 'Keep Devices Playing on Pattern Stop' changed to: $value")
+    }
+    // Initialize with the document state value
+    keepDevicesPlayingOnPatternStop = (keepDevicesPlayingEnumSetting.get() == "ENABLED")
+    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${if(keepDevicesPlayingOnPatternStop) "ENABLED" else "DISABLED"}")
   }
 
   override fun init() {
     host.println("=== Pattern Tracker Extension Starting ===")
     host.println("Version: $SCRIPT_VERSION")
     host.println("Initializing with host: ${host.javaClass.name}")
+
     try {
       // --- Setup Transport Observer ---
       val transport = host.createTransport()
@@ -322,7 +348,8 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
       host.println("Initial Transport State: isPlaying=$isTransportPlaying")
 
       setupSettings()
-      // --- Setup Action Button ---
+
+      // --- Setup Action Button (Existing Remap Clips) ---
       host.println("Setting up remap action button...")
       val documentState = host.documentState
       val remapAction = documentState.getSignalSetting(
@@ -331,8 +358,8 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         "Scan tracks and map clips by name"
       )
       remapAction.addSignalObserver(::remapClips)
+      host.println("Remap action button setup complete.")
 
-      host.println("Remap action button setup complete")
       host.println("Clearing existing references...")
 
       topLevelTracks.clear()
@@ -459,6 +486,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
           e.printStackTrace()
         }
       }
+
       logStoredReferences()
       host.println("Initialization complete. References stored. Observers attached. Press 'Remap Clips' button to perform initial mapping.")
     } catch (e: Exception) {
@@ -680,9 +708,16 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
             return
         }
 
-        // Otherwise, stop the associated device clip regardless of transport state
-        findAndStopDeviceClip(slotState.name)
-        slotState.deviceSlot = null // Clear the reference as this pattern slot stopped
+        // Otherwise, stop the associated device clip IF the setting is OFF
+        if (!keepDevicesPlayingOnPatternStop) {
+            host.println("   -> 'Keep Devices Playing' is OFF. Stopping device clip for pattern \"${slotState.name}\".")
+            findAndStopDeviceClip(slotState.name)
+        } else {
+            host.println("   -> 'Keep Devices Playing' is ON. Device clip for pattern \"${slotState.name}\" will continue.")
+        }
+        // We still clear the script's direct reference to the deviceSlot here because this *pattern slot* has stopped.
+        // The device clip might continue playing due to the setting, but this specific pattern instance is done triggering it.
+        slotState.deviceSlot = null
 
         // Note: We removed the complex logic trying to find the track via name again,
         // as findAndStopDeviceClip should handle the case where the name->device mapping exists.
