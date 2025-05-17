@@ -242,14 +242,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
       }
     }
     host.println("--- Pattern Slot Names After Remap ---")
-    fireSlotsState.forEach { (parentIdx: Int, parentMap: TrackSlotMap<FireSlotState>) ->
-      parentMap.forEach { (childIdx: Int, childMap: MutableMap<Int, FireSlotState>) ->
-        childMap.forEach { (slotIdx: Int, state: FireSlotState) ->
-          host.println("   - Slot [$parentIdx, $childIdx, $slotIdx]: Name=\"${state.name}\" (IsPlaying: ${state.isPlaying})")
-        }
-      }
-    }
-    host.println("---------------------------")
+    logNestedMapSummary(host, fireSlotsState, "Fire Slots State Structure")
   }
 
   private fun setupSettings() {
@@ -503,24 +496,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         }
       }
     }
-    host.println("Child Slots (${childSlots.size} groups):")
-    childSlots.forEach { (parentIdx: Int, groupSlotMap: MutableMap<Int, MutableMap<Int, ClipLauncherSlot>>) ->
-      host.println("  Group $parentIdx (${groupSlotMap.size} tracks with slots):")
-      groupSlotMap.forEach { (childIdx: Int, slotMap: MutableMap<Int, ClipLauncherSlot>) ->
-        host.println("    Track $childIdx (${slotMap.size} slots):")
-        slotMap.forEach { (slotIdx: Int, slot: ClipLauncherSlot) ->
-          try {
-            host.println(
-              "      [$parentIdx, $childIdx, $slotIdx]: Name=\"${
-                slot.name().get()
-              }\", HasContent=${slot.hasContent().get()}, Exists=${slot.exists().get()}"
-            )
-          } catch (e: Exception) {
-            host.println("      [$parentIdx, $childIdx, $slotIdx]: Error getting info: ${e.message}")
-          }
-        }
-      }
-    }
+    logNestedMapSummary(host, childSlots, "  Child Slots Structure")
     host.println("-----------------------------------")
   }
 
