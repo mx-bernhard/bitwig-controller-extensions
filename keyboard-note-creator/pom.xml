@@ -1,0 +1,143 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>com.b3rnhard</groupId>
+		<artifactId>pattern-tracker-parent</artifactId>
+		<version>0.1</version>
+		<relativePath>../pom.xml</relativePath>
+	</parent>
+
+	<artifactId>keyboard-note-creator</artifactId>
+	<packaging>jar</packaging>
+	<name>Keyboard Note Creator</name>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.bitwig</groupId>
+			<artifactId>extension-api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.jetbrains.kotlin</groupId>
+			<artifactId>kotlin-stdlib</artifactId>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
+		<plugins>
+			<plugin>
+				<groupId>org.jetbrains.kotlin</groupId>
+				<artifactId>kotlin-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>compile</id>
+						<phase>compile</phase>
+						<goals>
+							<goal>compile</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.5.1</version>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<minimizeJar>true</minimizeJar>
+							<artifactSet>
+								<includes>
+									<include>org.jetbrains.kotlin:kotlin-stdlib</include>
+									<include>org.jetbrains.kotlin:kotlin-stdlib-common</include>
+									<include>org.jetbrains:annotations</include>
+								</includes>
+							</artifactSet>
+							<shadedArtifactAttached>true</shadedArtifactAttached>
+							<shadedClassifierName>shaded</shadedClassifierName>
+							<createDependencyReducedPom>true</createDependencyReducedPom>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-deploy-plugin</artifactId>
+				<version>3.1.2</version>
+				<configuration>
+					<skip>true</skip>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>com.coderplus.maven.plugins</groupId>
+				<artifactId>copy-rename-maven-plugin</artifactId>
+				<version>1.0</version>
+				<executions>
+					<execution>
+						<id>rename-file</id>
+						<phase>install</phase>
+						<goals>
+							<goal>copy</goal>
+						</goals>
+						<configuration>
+							<sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</sourceFile>
+							<destinationFile>${project.build.directory}/KeyboardNoteCreator.bwextension</destinationFile>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+					<execution>
+						<id>copy-bwextension</id>
+						<phase>install</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<property environment="env"/>
+								<condition property="target.dir" value="${bitwig.scripts.dir}">
+									<isset property="bitwig.scripts.dir"/>
+								</condition>
+								<condition property="target.dir" value="${env.BITWIG_SCRIPTS_DIR}">
+									<and>
+										<not><isset property="target.dir"/></not>
+										<isset property="env.BITWIG_SCRIPTS_DIR"/>
+									</and>
+								</condition>
+								<fail message="BITWIG_SCRIPTS_DIR environment variable or bitwig.scripts.dir system property must be set and not empty.">
+									<condition>
+										<or>
+											<not><isset property="target.dir"/></not>
+											<equals arg1="${target.dir}" arg2="" trim="true"/>
+										</or>
+									</condition>
+								</fail>
+								<echo message="Target Bitwig Scripts Directory is set to: ${target.dir}"/>
+								<mkdir dir="${target.dir}"/>
+								<copy file="${project.build.directory}/KeyboardNoteCreator.bwextension"
+									  tofile="${target.dir}/KeyboardNoteCreator.bwextension"
+									  overwrite="true" />
+								<echo message="Copied KeyboardNoteCreator.bwextension to ${target.dir}"/>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project> 

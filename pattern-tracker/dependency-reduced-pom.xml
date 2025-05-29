@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <parent>
+    <artifactId>pattern-tracker-parent</artifactId>
+    <groupId>com.b3rnhard</groupId>
+    <version>0.1</version>
+  </parent>
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.b3rnhard</groupId>
-  <artifactId>pattern-tracker-parent</artifactId>
-  <packaging>pom</packaging>
-  <name>pattern-tracker-parent</name>
-  <version>0.1</version>
+  <artifactId>pattern-tracker</artifactId>
+  <name>pattern-tracker</name>
   <build>
+    <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
     <plugins>
       <plugin>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-maven-plugin</artifactId>
-        <version>${kotlin.version}</version>
         <executions>
           <execution>
             <id>compile</id>
@@ -19,51 +21,11 @@
             <goals>
               <goal>compile</goal>
             </goals>
-            <configuration>
-              <sourceDirs>
-                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
-              </sourceDirs>
-            </configuration>
-          </execution>
-          <execution>
-            <id>test-compile</id>
-            <phase>test-compile</phase>
-            <goals>
-              <goal>test-compile</goal>
-            </goals>
-            <configuration>
-              <sourceDirs>
-                <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
-              </sourceDirs>
-            </configuration>
           </execution>
         </executions>
-        <dependencies>
-          <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-maven-allopen</artifactId>
-            <version>${kotlin.version}</version>
-          </dependency>
-        </dependencies>
-        <configuration>
-          <jvmTarget>1.8</jvmTarget>
-          <compilerPlugins>
-            <plugin>all-open</plugin>
-          </compilerPlugins>
-          <pluginOptions />
-        </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.0</version>
-        <configuration>
-          <optimize>true</optimize>
-          <fork>true</fork>
-          <source>1.8</source>
-          <target>1.8</target>
-          <encoding>UTF-8</encoding>
-          <maxmem>1024m</maxmem>
-        </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
@@ -85,6 +47,7 @@
               </artifactSet>
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>shaded</shadedClassifierName>
+              <createDependencyReducedPom>true</createDependencyReducedPom>
             </configuration>
           </execution>
         </executions>
@@ -108,31 +71,57 @@
               <goal>copy</goal>
             </goals>
             <configuration>
-              <sourceFile>${project.build.directory}/${project.build.finalName}.jar</sourceFile>
+              <sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</sourceFile>
               <destinationFile>${project.build.directory}/PatternTracker.bwextension</destinationFile>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.0.0</version>
+        <executions>
+          <execution>
+            <id>copy-bwextension</id>
+            <phase>install</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <property />
+                <condition>
+                  <isset />
+                </condition>
+                <condition>
+                  <and>
+                    <not>
+                      <isset />
+                    </not>
+                    <isset />
+                  </and>
+                </condition>
+                <fail>
+                  <condition>
+                    <or>
+                      <not>
+                        <isset />
+                      </not>
+                      <equals />
+                    </or>
+                  </condition>
+                </fail>
+                <echo />
+                <mkdir />
+                <copy />
+                <echo />
+              </target>
             </configuration>
           </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
-  <profiles>
-    <profile>
-      <id>deploy-to-bitwig</id>
-      <build />
-    </profile>
-  </profiles>
-  <modules>
-    <module>keyboard-note-creator</module>
-    <module>pattern-tracker</module>
-  </modules>
-  <repositories>
-    <repository>
-      <id>bitwig</id>
-      <name>Bitwig Maven Repository</name>
-      <url>https://maven.bitwig.com</url>
-    </repository>
-  </repositories>
   <dependencies>
     <dependency>
       <groupId>com.bitwig</groupId>
@@ -141,7 +130,4 @@
       <scope>compile</scope>
     </dependency>
   </dependencies>
-  <properties>
-    <kotlin.version>2.1.20</kotlin.version>
-  </properties>
 </project>
