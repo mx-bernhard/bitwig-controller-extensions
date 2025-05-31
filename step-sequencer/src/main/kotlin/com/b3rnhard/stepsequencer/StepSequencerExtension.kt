@@ -1,4 +1,4 @@
-package com.b3rnhard.keyboardnotecreator
+package com.b3rnhard.stepsequencer
 
 import com.bitwig.extension.api.PlatformType
 import com.bitwig.extension.controller.api.ControllerHost
@@ -22,7 +22,7 @@ import com.bitwig.extension.controller.api.Signal
 import com.bitwig.extension.controller.api.Preferences
 import com.bitwig.extension.controller.api.SettableEnumValue
 
-class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
+class StepSequencerExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
 
     private lateinit var documentState: DocumentState
     private lateinit var application: Application
@@ -65,7 +65,7 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
         preferences = host.preferences
 
         // Create cursor track that follows selection
-        cursorTrack = host.createCursorTrack("KeyboardNoteCreator:CursorTrack", "Cursor Track", 0, 0, true)
+        cursorTrack = host.createCursorTrack("stepsequencer:CursorTrack", "Cursor Track", 0, 0, true)
 
         // Create global launcher cursor clip (follows the global clip launcher selection)
         cursorClip = host.createLauncherCursorClip(128, 128)
@@ -418,7 +418,7 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
     companion object {
         @JvmStatic
         fun createExtensionInstance(definition: ControllerExtensionDefinition, host: ControllerHost): ControllerExtension {
-            return KeyboardNoteCreatorExtension(definition, host)
+            return StepSequencerExtension(definition, host)
         }
     }
 } 

@@ -9,7 +9,7 @@
 	<version>0.1</version>
 
 	<modules>
-		<module>keyboard-note-creator</module>
+		<module>step-sequencer</module>
 		<module>midi-splitter</module>
 		<module>pattern-tracker</module>
 	</modules>

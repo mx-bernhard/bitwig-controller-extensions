@@ -1,4 +1,4 @@
-package com.b3rnhard.keyboardnotecreator
+package com.b3rnhard.stepsequencer
 
 import com.bitwig.extension.api.PlatformType
 import com.bitwig.extension.controller.AutoDetectionMidiPortNamesList
@@ -6,14 +6,14 @@ import com.bitwig.extension.controller.ControllerExtensionDefinition
 import com.bitwig.extension.controller.api.ControllerHost
 import java.util.UUID
 
-class KeyboardNoteCreatorExtensionDefinition : ControllerExtensionDefinition() {
+class StepSequencerExtensionDefinition : ControllerExtensionDefinition() {
 
-    override fun getName(): String = "Keyboard Note Creator"
-    override fun getAuthor(): String = "Your Name"
+    override fun getName(): String = "Step Sequencer"
+    override fun getAuthor(): String = "b3rnhard"
     override fun getVersion(): String = "0.1"
     override fun getId(): UUID = UUID.fromString("6c0e6f1b-4b7a-4c8a-8f1a-5b9a9c3d5a7e") // Generated unique UUID
     override fun getHardwareVendor(): String = "Generic"
-    override fun getHardwareModel(): String = "Keyboard Note Creator"
+    override fun getHardwareModel(): String = "Step Sequencer"
     override fun getRequiredAPIVersion(): Int = 22
 
     override fun getNumMidiInPorts(): Int = 1 // Now we need one MIDI input from virtual port
@@ -26,7 +26,7 @@ class KeyboardNoteCreatorExtensionDefinition : ControllerExtensionDefinition() {
         // Leave empty - users will manually assign the virtual MIDI port
     }
 
-    override fun createInstance(host: ControllerHost): KeyboardNoteCreatorExtension {
-        return KeyboardNoteCreatorExtension(this, host)
+    override fun createInstance(host: ControllerHost): StepSequencerExtension {
+        return StepSequencerExtension(this, host)
     }
 } 

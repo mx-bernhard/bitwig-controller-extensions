@@ -31,7 +31,7 @@ A sophisticated pattern-based music creation system that automates device trigge
 - **Error Handling**: Graceful handling of missing clips or invalid mappings
 - **Configurable Stop Behavior**: Keep devices playing or stop them when patterns end
 
-### 2. Keyboard Note Creator
+### 2. Step Recording Extension
 
 Converts keyboard input into step-sequenced notes in Bitwig Studio clips:
 
@@ -56,7 +56,7 @@ Enables using one hardware MIDI controller with multiple Bitwig extensions simul
 - **Simultaneous Operation**: Hardware controller functions normally while custom extensions receive input
 - **Transparent Operation**: Hardware LEDs, displays, and feedback work through original extension
 
-**Use case**: Use your Push 2, Launchpad, or other controller with both its original manufacturer extension AND custom extensions like the Keyboard Note Creator at the same time.
+**Use case**: Use your Push 2, Launchpad, or other controller with both its original manufacturer extension AND custom extensions like the Step Recording Extension at the same time.
 
 ## MIDI Splitter Setup Guide
 
@@ -79,8 +79,8 @@ Hardware Controller (e.g., Push 2)
     ↓             ↓             ↓
 Virtual Port A  Virtual Port B  Virtual Port C...
     ↓             ↓             ↓
-Original        Keyboard Note   Other Custom
-Extension       Creator         Extensions
+Original        Step Recording   Other Custom
+Extension       Extension         Extensions
 ```
 
 ### Step 1: Install LoopMIDI (Windows)
@@ -122,10 +122,10 @@ In LoopMIDI:
 4. **Output**: Assign to `Virtual-A-Original`
 5. Click **Add**
 
-#### Add Keyboard Note Creator Extension
+#### Add Step Recording Extension
 
 1. Click **[+ Add controller]** again
-2. Find **Generic → Keyboard Note Creator**
+2. Find **Generic → Step Recording Extension**
 3. **Input**: Assign to `Virtual-B-Custom`
 4. Click **Add**
 
@@ -309,7 +309,7 @@ The extension is **transport-aware** and behaves differently based on transport 
 
 # Using Multiple Extensions Together
 
-The following sections cover usage of the MIDI Splitter and Keyboard Note Creator extensions, which can be used together with the Pattern Tracker for enhanced workflows.
+The following sections cover usage of the MIDI Splitter and Step Recording Extension extensions, which can be used together with the Pattern Tracker for enhanced workflows.
 
 ## Usage
 
@@ -321,7 +321,7 @@ Your hardware controller should maintain its full MIDI functionality through the
 
 ### Adding Notes to Clips
 
-With the Keyboard Note Creator:
+With the Step Recording Extension:
 
 1. **Select a clip** in Bitwig and open the piano roll editor
 2. **Play notes** on your hardware keyboard
@@ -332,7 +332,7 @@ With the Keyboard Note Creator:
 
 Configure MIDI learn for cursor navigation:
 
-1. **Open Controller Preferences** for Keyboard Note Creator
+1. **Open Controller Preferences** for Step Recording Extension
 2. **MIDI Learn section**:
    - Forward Button: Set to "Learning..." then press a hardware button
    - Backward Button: Set to "Learning..." then press a different button
@@ -340,7 +340,7 @@ Configure MIDI learn for cursor navigation:
 
 ### Note Length Configuration
 
-Adjust note length in **Studio I/O Panel → Keyboard Note Creator**:
+Adjust note length in **Studio I/O Panel → Step Recording Extension**:
 
 - Range: 0.01 to 4.0 beats
 - Default: 0.25 beats (16th note)
@@ -353,7 +353,7 @@ Adjust note length in **Studio I/O Panel → Keyboard Note Creator**:
 - **Check**: Original extension input assigned to `Virtual-A-Original`
 - **Restart**: Extensions in Bitwig Controller settings
 
-### Keyboard Note Creator Not Working
+### Step Recording Extension Not Working
 
 - **Check**: Extension input assigned to `Virtual-B-Custom`
 - **Check**: MIDI Splitter output 2 assigned to `Virtual-B-Custom`
@@ -381,7 +381,7 @@ Adjust note length in **Studio I/O Panel → Keyboard Note Creator**:
 ### Novation Launchpad
 
 - Session mode: Original extension handles pad LEDs
-- Note input: Works well with Keyboard Note Creator
+- Note input: Works well with Step Recording Extension
 
 ## Extension Settings
 
@@ -390,7 +390,7 @@ Adjust note length in **Studio I/O Panel → Keyboard Note Creator**:
 - **Input Ports**: 1 (your hardware controller)
 - **Output Ports**: 2 (virtual MIDI ports)
 
-### Keyboard Note Creator
+### Step Recording Extension
 
 - **Note Length**: 0.01-4.0 beats (configurable)
 - **Chord Detection**: 100ms threshold
