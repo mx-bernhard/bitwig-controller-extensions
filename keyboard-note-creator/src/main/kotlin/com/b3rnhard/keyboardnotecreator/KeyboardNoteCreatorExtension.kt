@@ -19,37 +19,50 @@ import com.bitwig.extension.controller.api.Application
 import com.bitwig.extension.api.util.midi.ShortMidiMessage
 import java.util.*
 import com.bitwig.extension.controller.api.Signal
+import com.bitwig.extension.controller.api.Preferences
+import com.bitwig.extension.controller.api.SettableEnumValue
 
 class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
 
     private lateinit var documentState: DocumentState
     private lateinit var application: Application
+    private lateinit var transport: Transport
     private lateinit var cursorTrack: CursorTrack
     private lateinit var cursorClip: Clip
-    private lateinit var transport: Transport
     private lateinit var midiIn: MidiIn
     private lateinit var noteInput: NoteInput
     private lateinit var noteLengthSetting: SettableRangedValue
-    private lateinit var resetCursorAction: Signal
     private lateinit var cursorForwardAction: Signal
     private lateinit var cursorBackwardAction: Signal
-
-    private var noteLength: Double = 0.25 // Default value, will be updated by the setting
-    private var cursorPosition: Double = 0.0 // Our own cursor position in beats
-    private var isUpdatingSelection: Boolean = false // Flag to prevent infinite recursion
+    private lateinit var preferences: Preferences
+    private lateinit var midiLearnForwardSetting: SettableEnumValue
+    private lateinit var midiLearnBackwardSetting: SettableEnumValue
     
-    // Chord detection state
-    private val activeNotes = mutableMapOf<Int, Long>() // MIDI note -> timestamp
-    private val pendingNotes = mutableSetOf<Int>() // Notes waiting to be placed
+    // MIDI learn state
+    private var isLearningForward = false
+    private var isLearningBackward = false
+    private var forwardCC = -1
+    private var forwardChannel = -1
+    private var backwardCC = -1
+    private var backwardChannel = -1
+    
+    private var noteLength: Double = 0.25 // Default to 16th note
+    private var cursorPosition: Double = 0.0
+    private var isUpdatingSelection = false
+    
+    // Chord detection
+    private val activeNotes = mutableMapOf<Int, Long>()
+    private val pendingNotes = mutableSetOf<Int>()
     private var firstNoteTime: Long = 0
     private var lastNoteOnTime: Long = 0
-    private val chordTimeoutMs: Long = 100 // Maximum time span between first and last note to consider them a chord
+    private val chordThresholdMs = 100L // Notes within 100ms are considered a chord
 
     override fun init() {
         // Get document state and application
         documentState = host.documentState
         application = host.createApplication()
         transport = host.createTransport()
+        preferences = host.preferences
 
         // Create cursor track that follows selection
         cursorTrack = host.createCursorTrack("KeyboardNoteCreator:CursorTrack", "Cursor Track", 0, 0, true)
@@ -91,83 +104,107 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
         // Initialize noteLength with current setting value
         noteLength = noteLengthSetting.get()
 
+        // Setup MIDI learn preferences
+        setupMidiLearnSettings()
+
         // Initialize cursor position to current clip start position if clip exists, otherwise transport position
-        if (cursorClip.exists().get()) {
-            cursorPosition = cursorClip.getPlayStart().get()
-        } else {
-            cursorPosition = transport.playPosition().get()
-        }
+        updateCursorFromClipOrTransport()
 
-        // Add a button to reset cursor position to current transport position
-        resetCursorAction = documentState.getSignalSetting(
-            "Reset Cursor", // name
-            "Keyboard Note Creator", // category
-            "Reset Cursor Position" // label
-        )
-        
-        resetCursorAction.addSignalObserver {
-            // Reset to beginning of clip if clip exists, otherwise to transport position
-            if (cursorClip.exists().get()) {
-                cursorPosition = cursorClip.getPlayStart().get()
-                host.showPopupNotification("Cursor reset to clip start: ${String.format("%.3f", cursorPosition)} beats")
-            } else {
-                cursorPosition = transport.playPosition().get()
-                host.showPopupNotification("Cursor reset to transport position: ${String.format("%.3f", cursorPosition)} beats")
-            }
-            updateCursorSelection()
-        }
+        // Create cursor movement actions that can be triggered from document state  
+        cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Keyboard Note Creator", "Forward")
+        cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Keyboard Note Creator", "Backward")
 
-        // Add cursor navigation commands
-        cursorForwardAction = documentState.getSignalSetting(
-            "Cursor Forward", // name
-            "Keyboard Note Creator", // category
-            "Move Cursor Forward" // label
-        )
-        
+        // Add observers for cursor movement
         cursorForwardAction.addSignalObserver {
-            cursorPosition += noteLength
+            cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
             host.showPopupNotification("Cursor moved forward to: ${String.format("%.3f", cursorPosition)} beats")
             updateCursorSelection()
         }
 
-        cursorBackwardAction = documentState.getSignalSetting(
-            "Cursor Backward", // name
-            "Keyboard Note Creator", // category
-            "Move Cursor Backward" // label
-        )
-        
         cursorBackwardAction.addSignalObserver {
             cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
             host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
             updateCursorSelection()
         }
 
-        // Get MIDI input port and set up input/callback
-        midiIn = host.getMidiInPort(0)
-        noteInput = midiIn.createNoteInput("Keyboard", "80????", "90????")
-        noteInput.setShouldConsumeEvents(false) // Don't consume events so they can still trigger notes in the DAW
+        // Get MIDI input port and set up input/callback (only if a MIDI port is assigned)
+        try {
+            midiIn = host.getMidiInPort(0)
+            noteInput = midiIn.createNoteInput("Keyboard", "80????", "90????")
+            noteInput.setShouldConsumeEvents(false) // Don't consume events so they can still trigger notes in the DAW
 
-        // Set up a MIDI callback to handle note on/off for chord detection
-        midiIn.setMidiCallback { status: Int, data1: Int, data2: Int ->
-            val currentTime = System.currentTimeMillis()
-            
-            // Check if it's a Note On message (status 0x90-0x9F)
-            if (status in 0x90..0x9F) {
-                val note = data1
-                val velocity = data2
+            // Set up a MIDI callback to handle note on/off for chord detection
+            midiIn.setMidiCallback { status: Int, data1: Int, data2: Int ->
+                val currentTime = System.currentTimeMillis()
                 
-                if (velocity > 0) {
-                    // Note On
-                    activeNotes[note] = currentTime
-                    pendingNotes.add(note)
+                // Handle MIDI learn for CC messages
+                if (status in 0xB0..0xBF) { // CC message
+                    val channel = status and 0x0F
+                    val cc = data1
+                    val value = data2
                     
-                    // Track first note time only when starting a new chord
-                    if (pendingNotes.size == 1) {
-                        firstNoteTime = currentTime
+                    if (isLearningForward) {
+                        forwardCC = cc
+                        forwardChannel = channel
+                        isLearningForward = false
+                        midiLearnForwardSetting.set("CC $cc Ch ${channel + 1}")
+                        host.showPopupNotification("Forward mapped to CC $cc Channel ${channel + 1}")
+                        return@setMidiCallback
                     }
-                    lastNoteOnTime = currentTime
-                } else {
-                    // Note Off (velocity 0)
+                    
+                    if (isLearningBackward) {
+                        backwardCC = cc
+                        backwardChannel = channel
+                        isLearningBackward = false
+                        midiLearnBackwardSetting.set("CC $cc Ch ${channel + 1}")
+                        host.showPopupNotification("Backward mapped to CC $cc Channel ${channel + 1}")
+                        return@setMidiCallback
+                    }
+                    
+                    // Check if this CC matches learned forward/backward controls
+                    if (cc == forwardCC && channel == forwardChannel && value > 0) {
+                        cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
+                        host.showPopupNotification("Cursor moved forward to: ${String.format("%.3f", cursorPosition)} beats")
+                        updateCursorSelection()
+                        return@setMidiCallback
+                    }
+                    
+                    if (cc == backwardCC && channel == backwardChannel && value > 0) {
+                        cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
+                        host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
+                        updateCursorSelection()
+                        return@setMidiCallback
+                    }
+                }
+                
+                // Check if it's a Note On message (status 0x90-0x9F)
+                if (status in 0x90..0x9F) {
+                    val note = data1
+                    val velocity = data2
+                    
+                    if (velocity > 0) {
+                        // Note On
+                        activeNotes[note] = currentTime
+                        pendingNotes.add(note)
+                        
+                        // Track first note time only when starting a new chord
+                        if (pendingNotes.size == 1) {
+                            firstNoteTime = currentTime
+                        }
+                        lastNoteOnTime = currentTime
+                    } else {
+                        // Note Off (velocity 0)
+                        activeNotes.remove(note)
+                        
+                        // If no notes are currently held, process pending notes
+                        if (activeNotes.isEmpty()) {
+                            processPendingNotes()
+                        }
+                    }
+                }
+                // Handle explicit Note Off messages (status 0x80-0x8F)
+                else if (status in 0x80..0x8F) {
+                    val note = data1
                     activeNotes.remove(note)
                     
                     // If no notes are currently held, process pending notes
@@ -176,23 +213,63 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
                     }
                 }
             }
-            // Handle explicit Note Off messages (status 0x80-0x8F)
-            else if (status in 0x80..0x8F) {
-                val note = data1
-                activeNotes.remove(note)
-                
-                // If no notes are currently held, process pending notes
-                if (activeNotes.isEmpty()) {
-                    processPendingNotes()
-                }
-            }
+            
+            host.showPopupNotification("Keyboard Note Creator Initialized with MIDI Input")
+        } catch (e: Exception) {
+            host.showPopupNotification("Keyboard Note Creator Initialized (No MIDI Input Assigned)")
+            host.println("No MIDI input assigned - MIDI learn and note input features disabled")
         }
 
-        host.showPopupNotification("Keyboard Note Creator Initialized")
-        host.showPopupNotification("Double-click an arranger clip to open piano roll, then play notes!")
+        host.showPopupNotification("Use controller preferences to learn forward/backward buttons!")
         
         // Set up note selection observer to track selected notes and update cursor position
         setupNoteSelectionObserver()
+    }
+    
+    private fun setupMidiLearnSettings() {
+        // MIDI learn for forward button
+        midiLearnForwardSetting = preferences.getEnumSetting(
+            "Forward Button",
+            "MIDI Learn",
+            arrayOf("Not Mapped", "Learning..."),
+            "Not Mapped"
+        )
+        
+        midiLearnForwardSetting.addValueObserver { value ->
+            when (value) {
+                "Learning..." -> {
+                    isLearningForward = true
+                    host.showPopupNotification("Learning Forward Button - Send a CC message")
+                }
+                "Not Mapped" -> {
+                    forwardCC = -1
+                    forwardChannel = -1
+                    host.showPopupNotification("Forward button unmapped")
+                }
+            }
+        }
+        
+        // MIDI learn for backward button
+        midiLearnBackwardSetting = preferences.getEnumSetting(
+            "Backward Button",
+            "MIDI Learn", 
+            arrayOf("Not Mapped", "Learning..."),
+            "Not Mapped"
+        )
+        
+        midiLearnBackwardSetting.addValueObserver { value ->
+            when (value) {
+                "Learning..." -> {
+                    isLearningBackward = true
+                    host.showPopupNotification("Learning Backward Button - Send a CC message")
+                }
+                "Not Mapped" -> {
+                    backwardCC = -1
+                    backwardChannel = -1
+                    host.showPopupNotification("Backward button unmapped")
+                }
+            }
+        }
     }
     
     private fun setupNoteSelectionObserver() {
@@ -248,7 +325,7 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
                 // Multiple notes - check if they should be a chord
                 val noteTimeSpan = lastNoteOnTime - firstNoteTime
                 
-                if (noteTimeSpan <= chordTimeoutMs) {
+                if (noteTimeSpan <= chordThresholdMs) {
                     // Notes were pressed close together - place as chord
                     addNotesToCurrentClip(noteList, 127)
                 } else {
@@ -328,6 +405,14 @@ class KeyboardNoteCreatorExtension(definition: ControllerExtensionDefinition, ho
 
     override fun flush() {
         // Nothing specific to flush
+    }
+
+    private fun updateCursorFromClipOrTransport() {
+        if (cursorClip.exists().get()) {
+            cursorPosition = cursorClip.getPlayStart().get()
+        } else {
+            cursorPosition = transport.playPosition().get()
+        }
     }
 
     companion object {

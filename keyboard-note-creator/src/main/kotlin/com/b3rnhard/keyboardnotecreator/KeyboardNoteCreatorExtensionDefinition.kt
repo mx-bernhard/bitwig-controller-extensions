@@ -16,14 +16,14 @@ class KeyboardNoteCreatorExtensionDefinition : ControllerExtensionDefinition() {
     override fun getHardwareModel(): String = "Keyboard Note Creator"
     override fun getRequiredAPIVersion(): Int = 22
 
-    override fun getNumMidiInPorts(): Int = 1 // We need one MIDI input port for the keyboard
+    override fun getNumMidiInPorts(): Int = 1 // Now we need one MIDI input from virtual port
     override fun getNumMidiOutPorts(): Int = 0
 
     override fun listAutoDetectionMidiPortNames(
         list: AutoDetectionMidiPortNamesList,
         platformType: PlatformType
     ) {
-        // TODO: Implement auto-detection if needed
+        // Leave empty - users will manually assign the virtual MIDI port
     }
 
     override fun createInstance(host: ControllerHost): KeyboardNoteCreatorExtension {

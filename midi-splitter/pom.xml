@@ -9,9 +9,9 @@
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 
-	<artifactId>keyboard-note-creator</artifactId>
+	<artifactId>midi-splitter</artifactId>
 	<packaging>jar</packaging>
-	<name>Keyboard Note Creator</name>
+	<name>MIDI Splitter</name>
 
 	<dependencies>
 		<dependency>
@@ -68,10 +68,10 @@
 							<createDependencyReducedPom>true</createDependencyReducedPom>
 							<manifest>
 								<addClasspath>true</addClasspath>
-								<mainClass>com.b3rnhard.keyboardnotecreator.KeyboardNoteCreatorExtensionDefinition</mainClass>
+								<mainClass>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</mainClass>
 							</manifest>
 							<manifestEntries>
-								<Extension-Class>com.b3rnhard.keyboardnotecreator.KeyboardNoteCreatorExtensionDefinition</Extension-Class>
+								<Extension-Class>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</Extension-Class>
 							</manifestEntries>
 						</configuration>
 					</execution>
@@ -98,7 +98,7 @@
 						</goals>
 						<configuration>
 							<sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</sourceFile>
-							<destinationFile>${project.build.directory}/KeyboardNoteCreator.bwextension</destinationFile>
+							<destinationFile>${project.build.directory}/MidiSplitter.bwextension</destinationFile>
 						</configuration>
 					</execution>
 				</executions>
@@ -136,10 +136,10 @@
 								</fail>
 								<echo message="Target Bitwig Scripts Directory is set to: ${target.dir}"/>
 								<mkdir dir="${target.dir}"/>
-								<copy file="${project.build.directory}/KeyboardNoteCreator.bwextension"
-									  tofile="${target.dir}/KeyboardNoteCreator.bwextension"
+								<copy file="${project.build.directory}/MidiSplitter.bwextension"
+									  tofile="${target.dir}/MidiSplitter.bwextension"
 									  overwrite="true" />
-								<echo message="Copied KeyboardNoteCreator.bwextension to ${target.dir}"/>
+								<echo message="Copied MidiSplitter.bwextension to ${target.dir}"/>
 							</target>
 						</configuration>
 					</execution>

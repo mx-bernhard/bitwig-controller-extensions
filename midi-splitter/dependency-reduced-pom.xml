@@ -6,8 +6,8 @@
     <version>0.1</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>keyboard-note-creator</artifactId>
-  <name>Keyboard Note Creator</name>
+  <artifactId>midi-splitter</artifactId>
+  <name>MIDI Splitter</name>
   <build>
     <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
     <plugins>
@@ -50,10 +50,10 @@
               <createDependencyReducedPom>true</createDependencyReducedPom>
               <manifest>
                 <addClasspath>true</addClasspath>
-                <mainClass>com.b3rnhard.keyboardnotecreator.KeyboardNoteCreatorExtensionDefinition</mainClass>
+                <mainClass>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</mainClass>
               </manifest>
               <manifestEntries>
-                <Extension-Class>com.b3rnhard.keyboardnotecreator.KeyboardNoteCreatorExtensionDefinition</Extension-Class>
+                <Extension-Class>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</Extension-Class>
               </manifestEntries>
             </configuration>
           </execution>
@@ -79,7 +79,7 @@
             </goals>
             <configuration>
               <sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</sourceFile>
-              <destinationFile>${project.build.directory}/KeyboardNoteCreator.bwextension</destinationFile>
+              <destinationFile>${project.build.directory}/MidiSplitter.bwextension</destinationFile>
             </configuration>
           </execution>
         </executions>
