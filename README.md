@@ -33,16 +33,18 @@ A sophisticated pattern-based music creation system that automates device trigge
 
 ### 2. Step Recording Extension
 
-Converts keyboard input into step-sequenced notes in Bitwig Studio clips:
+Converts keyboard input into step-sequenced notes in Bitwig Studio clips with professional musical timing controls:
 
-- **Note Input**: Play notes on your MIDI keyboard to add them to the currently selected clip
-- **Cursor Navigation**: Automatically advances cursor position after note entry
-- **Chord Detection**: Notes played within 100ms are placed as chords
-- **Configurable Note Length**: Set note duration from 1/64 to whole notes
-- **MIDI Learn**: Map hardware buttons for cursor forward/backward movement
-- **Step Sequencing**: Creates precise step-based note sequences
-- **Real-time Recording**: Input notes while maintaining quantized timing
+- **Step Recording**: Play notes on your MIDI keyboard to add them to the currently selected clip
+- **Musical Note Values**: Standard note values from 32/1 down to 1/64
+- **Triplet Support**: Regular and triplet timing for all note values
+- **Chord Detection**: 100ms threshold for chord recognition
+- **MIDI Learn Navigation**: CC-based cursor movement controls (works through MIDI Splitter)
+- **Automatic Cursor Advance**: Advances by selected note value after each entry
+- **Step Sequencing Workflow**: Creates precise step-based note sequences with musical timing
+- **Real-time Recording**: Input notes while maintaining quantized timing and musical note lengths
 - **Note Replacement**: New notes at the same position replace existing ones
+- **MIDI Splitter Compatible**: MIDI learn works through the MIDI Splitter for multi-extension setups
 
 ### 3. MIDI Splitter
 
@@ -342,8 +344,13 @@ Configure MIDI learn for cursor navigation:
 
 Adjust note length in **Studio I/O Panel → Step Recording Extension**:
 
-- Range: 0.01 to 4.0 beats
-- Default: 0.25 beats (16th note)
+- **Note Value**: Choose from 32/1, 16/1, 8/1, 4/1, 2/1, 1/1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64
+- **Note Type**: Regular or Triplet timing
+- **Default**: 1/16 Regular (16th note = 0.25 beats)
+- **Examples**:
+  - 1/4 Regular = 1.0 beat (quarter note)
+  - 1/8 Triplet = 0.333 beats (eighth note triplet)
+  - 1/1 Regular = 4.0 beats (whole note)
 
 ## Troubleshooting
 
@@ -392,9 +399,11 @@ Adjust note length in **Studio I/O Panel → Step Recording Extension**:
 
 ### Step Recording Extension
 
-- **Note Length**: 0.01-4.0 beats (configurable)
-- **Chord Detection**: 100ms threshold
-- **Cursor Movement**: MIDI learnable
+- **Musical Note Values**: Standard note values from 32/1 down to 1/64
+- **Triplet Support**: Regular and triplet timing for all note values
+- **Chord Detection**: 100ms threshold for chord recognition
+- **MIDI Learn Navigation**: CC-based cursor movement controls (works through MIDI Splitter)
+- **Automatic Cursor Advance**: Advances by selected note value after each entry
 
 ### Pattern Tracker
 

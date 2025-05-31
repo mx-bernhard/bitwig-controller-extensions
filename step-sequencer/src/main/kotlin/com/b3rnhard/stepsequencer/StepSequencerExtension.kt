@@ -31,20 +31,29 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     private lateinit var cursorClip: Clip
     private lateinit var midiIn: MidiIn
     private lateinit var noteInput: NoteInput
-    private lateinit var noteLengthSetting: SettableRangedValue
+    private lateinit var noteValueSetting: SettableEnumValue
+    private lateinit var tripletSetting: SettableEnumValue
     private lateinit var cursorForwardAction: Signal
     private lateinit var cursorBackwardAction: Signal
     private lateinit var preferences: Preferences
     private lateinit var midiLearnForwardSetting: SettableEnumValue
     private lateinit var midiLearnBackwardSetting: SettableEnumValue
+    private lateinit var midiLearnNoteValueSetting: SettableEnumValue
+    private lateinit var midiLearnClearSetting: SettableEnumValue
     
     // MIDI learn state
     private var isLearningForward = false
     private var isLearningBackward = false
+    private var isLearningNoteValue = false
+    private var isLearningClear = false
     private var forwardCC = -1
     private var forwardChannel = -1
     private var backwardCC = -1
     private var backwardChannel = -1
+    private var noteValueCC = -1
+    private var noteValueChannel = -1
+    private var clearCC = -1
+    private var clearChannel = -1
     
     private var noteLength: Double = 0.25 // Default to 16th note
     private var cursorPosition: Double = 0.0
@@ -85,24 +94,34 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         }
 
         // Create a setting for note length using document state
-        noteLengthSetting = documentState.getNumberSetting(
-            "Note Length", // name
-            "Keyboard Note Creator", // category  
-            0.01, // minimum value
-            4.0, // maximum value (whole note)
-            0.01, // step size
-            " Beat", // display unit
-            0.25 // initial value (16th note)
+        noteValueSetting = documentState.getEnumSetting(
+            "Note Value", // name
+            "Step Sequencer", // category  
+            arrayOf(
+                "32/1", "16/1", "8/1", "4/1", "2/1", "1/1", // Whole note and longer
+                "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" // Half note and shorter
+            ),
+            "1/16" // initial value (16th note)
+        )
+        
+        tripletSetting = documentState.getEnumSetting(
+            "Note Type",
+            "Step Sequencer",
+            arrayOf("Regular", "Triplet"),
+            "Regular"
         )
 
-        // Add observer to update noteLength when the setting changes
-        noteLengthSetting.addValueObserver { newValue ->
-            noteLength = newValue
-            host.showPopupNotification("Note Length: ${String.format("%.3f", noteLength)} beats")
+        // Add observers to update noteLength when either setting changes
+        val updateNoteLength = {
+            noteLength = calculateNoteLengthInBeats(noteValueSetting.get(), tripletSetting.get())
+            host.showPopupNotification("Note Length: ${noteValueSetting.get()} ${tripletSetting.get()} (${String.format("%.3f", noteLength)} beats)")
         }
+        
+        noteValueSetting.addValueObserver { updateNoteLength() }
+        tripletSetting.addValueObserver { updateNoteLength() }
 
-        // Initialize noteLength with current setting value
-        noteLength = noteLengthSetting.get()
+        // Initialize noteLength with current setting values
+        noteLength = calculateNoteLengthInBeats(noteValueSetting.get(), tripletSetting.get())
 
         // Setup MIDI learn preferences
         setupMidiLearnSettings()
@@ -111,8 +130,10 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         updateCursorFromClipOrTransport()
 
         // Create cursor movement actions that can be triggered from document state  
-        cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Keyboard Note Creator", "Forward")
-        cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Keyboard Note Creator", "Backward")
+        cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Step Sequencer", "Forward")
+        cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Step Sequencer", "Backward")
+        
+        val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Sequencer", "Clear")
 
         // Add observers for cursor movement
         cursorForwardAction.addSignalObserver {
@@ -126,11 +147,15 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
             updateCursorSelection()
         }
+        
+        cursorClearAction.addSignalObserver {
+            clearNotesAtCursor()
+        }
 
         // Get MIDI input port and set up input/callback (only if a MIDI port is assigned)
         try {
             midiIn = host.getMidiInPort(0)
-            noteInput = midiIn.createNoteInput("Keyboard", "80????", "90????")
+            noteInput = midiIn.createNoteInput("Keyboard", "80????", "90????", "B0????")
             noteInput.setShouldConsumeEvents(false) // Don't consume events so they can still trigger notes in the DAW
 
             // Set up a MIDI callback to handle note on/off for chord detection
@@ -161,6 +186,24 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                         return@setMidiCallback
                     }
                     
+                    if (isLearningNoteValue) {
+                        noteValueCC = cc
+                        noteValueChannel = channel
+                        isLearningNoteValue = false
+                        midiLearnNoteValueSetting.set("CC $cc Ch ${channel + 1}")
+                        host.showPopupNotification("Note Value Control mapped to CC $cc Channel ${channel + 1}")
+                        return@setMidiCallback
+                    }
+                    
+                    if (isLearningClear) {
+                        clearCC = cc
+                        clearChannel = channel
+                        isLearningClear = false
+                        midiLearnClearSetting.set("CC $cc Ch ${channel + 1}")
+                        host.showPopupNotification("Clear Button mapped to CC $cc Channel ${channel + 1}")
+                        return@setMidiCallback
+                    }
+                    
                     // Check if this CC matches learned forward/backward controls
                     if (cc == forwardCC && channel == forwardChannel && value > 0) {
                         cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
@@ -173,6 +216,26 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                         cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
                         host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
                         updateCursorSelection()
+                        return@setMidiCallback
+                    }
+                    
+                    // Check if this CC matches learned note value control
+                    if (cc == noteValueCC && channel == noteValueChannel) {
+                        val noteValueIndex = mapCCToNoteValueIndex(value)
+                        val noteValues = arrayOf(
+                            "32/1", "16/1", "8/1", "4/1", "2/1", "1/1",
+                            "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
+                        )
+                        if (noteValueIndex in noteValues.indices) {
+                            noteValueSetting.set(noteValues[noteValueIndex])
+                            host.showPopupNotification("Note Value: ${noteValues[noteValueIndex]}")
+                        }
+                        return@setMidiCallback
+                    }
+                    
+                    // Check if this CC matches learned clear control
+                    if (cc == clearCC && channel == clearChannel && value > 0) {
+                        clearNotesAtCursor()
                         return@setMidiCallback
                     }
                 }
@@ -214,9 +277,9 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                 }
             }
             
-            host.showPopupNotification("Keyboard Note Creator Initialized with MIDI Input")
+            host.showPopupNotification("Step Sequencer Initialized with MIDI Input")
         } catch (e: Exception) {
-            host.showPopupNotification("Keyboard Note Creator Initialized (No MIDI Input Assigned)")
+            host.showPopupNotification("Step Sequencer Initialized (No MIDI Input Assigned)")
             host.println("No MIDI input assigned - MIDI learn and note input features disabled")
         }
 
@@ -252,7 +315,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         // MIDI learn for backward button
         midiLearnBackwardSetting = preferences.getEnumSetting(
             "Backward Button",
-            "MIDI Learn", 
+            "MIDI Learn",
             arrayOf("Not Mapped", "Learning..."),
             "Not Mapped"
         )
@@ -267,6 +330,50 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                     backwardCC = -1
                     backwardChannel = -1
                     host.showPopupNotification("Backward button unmapped")
+                }
+            }
+        }
+        
+        // MIDI learn for note value control
+        midiLearnNoteValueSetting = preferences.getEnumSetting(
+            "Note Value Control",
+            "MIDI Learn",
+            arrayOf("Not Mapped", "Learning..."),
+            "Not Mapped"
+        )
+        
+        midiLearnNoteValueSetting.addValueObserver { value ->
+            when (value) {
+                "Learning..." -> {
+                    isLearningNoteValue = true
+                    host.showPopupNotification("Learning Note Value Control - Send a CC message")
+                }
+                "Not Mapped" -> {
+                    noteValueCC = -1
+                    noteValueChannel = -1
+                    host.showPopupNotification("Note value control unmapped")
+                }
+            }
+        }
+        
+        // MIDI learn for clear control
+        midiLearnClearSetting = preferences.getEnumSetting(
+            "Clear Button",
+            "MIDI Learn",
+            arrayOf("Not Mapped", "Learning..."),
+            "Not Mapped"
+        )
+        
+        midiLearnClearSetting.addValueObserver { value ->
+            when (value) {
+                "Learning..." -> {
+                    isLearningClear = true
+                    host.showPopupNotification("Learning Clear Button - Send a CC message")
+                }
+                "Not Mapped" -> {
+                    clearCC = -1
+                    clearChannel = -1
+                    host.showPopupNotification("Clear button unmapped")
                 }
             }
         }
@@ -400,7 +507,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     }
 
     override fun exit() {
-        host.showPopupNotification("Keyboard Note Creator Exited")
+        host.showPopupNotification("Step Sequencer Exited")
     }
 
     override fun flush() {
@@ -412,6 +519,79 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             cursorPosition = cursorClip.getPlayStart().get()
         } else {
             cursorPosition = transport.playPosition().get()
+        }
+    }
+    
+    /**
+     * Calculate note length in beats based on note value and triplet setting
+     * Assumes 4/4 time signature where 1 whole note = 4 beats
+     */
+    private fun calculateNoteLengthInBeats(noteValue: String, noteType: String): Double {
+        // Calculate base note length in beats (4/4 time signature)
+        val baseLength = when (noteValue) {
+            "32/1" -> 128.0  // 32 whole notes
+            "16/1" -> 64.0   // 16 whole notes
+            "8/1" -> 32.0    // 8 whole notes
+            "4/1" -> 16.0    // 4 whole notes
+            "2/1" -> 8.0     // 2 whole notes
+            "1/1" -> 4.0     // 1 whole note
+            "1/2" -> 2.0     // Half note
+            "1/4" -> 1.0     // Quarter note
+            "1/8" -> 0.5     // Eighth note
+            "1/16" -> 0.25   // Sixteenth note
+            "1/32" -> 0.125  // Thirty-second note
+            "1/64" -> 0.0625 // Sixty-fourth note
+            else -> 0.25     // Default to 16th note
+        }
+        
+        // Apply triplet timing if selected (2/3 of regular note length)
+        return if (noteType == "Triplet") {
+            baseLength * (2.0 / 3.0)
+        } else {
+            baseLength
+        }
+    }
+    
+    /**
+     * Map CC value (0-127) to note value index (0-11)
+     * Divides the CC range into 12 equal segments for the 12 note values
+     */
+    private fun mapCCToNoteValueIndex(ccValue: Int): Int {
+        // Clamp CC value to valid range
+        val clampedCC = ccValue.coerceIn(0, 127)
+        
+        // Map to index 0-11 (12 note values total)
+        // Using 127/11 ≈ 11.55, so each segment is about 10.6 CC values wide
+        return (clampedCC * 11 / 127).coerceIn(0, 11)
+    }
+    
+    /**
+     * Clear all notes at the current cursor position
+     * Converts note positions into rests/gaps
+     */
+    private fun clearNotesAtCursor() {
+        // Check if we have a valid clip
+        if (!cursorClip.exists().get()) {
+            host.showPopupNotification("No active clip found. Create or select a clip and open piano roll.")
+            return
+        }
+
+        try {
+            // Convert cursor position to step index
+            val stepSize = 0.25 // Use 16th note as base step size for grid
+            val absoluteStepIndex = (cursorPosition / stepSize).toInt()
+            
+            // Keep step index within the valid range (0-127)
+            val stepIndex = absoluteStepIndex % 128
+            
+            // Clear all notes at this step position
+            cursorClip.clearStepsAtX(0, stepIndex)
+            
+            host.showPopupNotification("Cleared notes at beat ${String.format("%.3f", cursorPosition)}, step $stepIndex")
+            
+        } catch (e: Exception) {
+            host.showPopupNotification("Error clearing notes: ${e.message}")
+            host.println("Error details: ${e}")
         }
     }
 
