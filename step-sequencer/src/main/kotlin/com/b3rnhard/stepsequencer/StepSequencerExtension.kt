@@ -36,24 +36,12 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     private lateinit var cursorForwardAction: Signal
     private lateinit var cursorBackwardAction: Signal
     private lateinit var preferences: Preferences
-    private lateinit var midiLearnForwardSetting: SettableEnumValue
-    private lateinit var midiLearnBackwardSetting: SettableEnumValue
-    private lateinit var midiLearnNoteValueSetting: SettableEnumValue
-    private lateinit var midiLearnClearSetting: SettableEnumValue
     
-    // MIDI learn state
-    private var isLearningForward = false
-    private var isLearningBackward = false
-    private var isLearningNoteValue = false
-    private var isLearningClear = false
-    private var forwardCC = -1
-    private var forwardChannel = -1
-    private var backwardCC = -1
-    private var backwardChannel = -1
-    private var noteValueCC = -1
-    private var noteValueChannel = -1
-    private var clearCC = -1
-    private var clearChannel = -1
+    // MIDI Learn Bindings
+    private lateinit var forwardBinding: MidiLearnBinding
+    private lateinit var backwardBinding: MidiLearnBinding
+    private lateinit var noteValueBinding: MidiLearnBinding
+    private lateinit var clearBinding: MidiLearnBinding
     
     private var noteLength: Double = 0.25 // Default to 16th note
     private var cursorPosition: Double = 0.0
@@ -136,19 +124,19 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Sequencer", "Clear")
 
         // Add observers for cursor movement
-        cursorForwardAction.addSignalObserver {
+        cursorForwardAction.addSignalObserver { 
             cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
             host.showPopupNotification("Cursor moved forward to: ${String.format("%.3f", cursorPosition)} beats")
             updateCursorSelection()
         }
 
-        cursorBackwardAction.addSignalObserver {
+        cursorBackwardAction.addSignalObserver { 
             cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
             host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
             updateCursorSelection()
         }
         
-        cursorClearAction.addSignalObserver {
+        cursorClearAction.addSignalObserver { 
             clearNotesAtCursor()
         }
 
@@ -158,88 +146,28 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             noteInput = midiIn.createNoteInput("Keyboard", "80????", "90????", "B0????")
             noteInput.setShouldConsumeEvents(false) // Don't consume events so they can still trigger notes in the DAW
 
-            // Set up a MIDI callback to handle note on/off for chord detection
+            // Set up a MIDI callback to handle note on/off for chord detection and MIDI learn
             midiIn.setMidiCallback { status: Int, data1: Int, data2: Int ->
                 val currentTime = System.currentTimeMillis()
                 
-                // Handle MIDI learn for CC messages
-                if (status in 0xB0..0xBF) { // CC message
-                    val channel = status and 0x0F
-                    val cc = data1
-                    val value = data2
-                    
-                    if (isLearningForward) {
-                        forwardCC = cc
-                        forwardChannel = channel
-                        isLearningForward = false
-                        midiLearnForwardSetting.set("CC $cc Ch ${channel + 1}")
-                        host.showPopupNotification("Forward mapped to CC $cc Channel ${channel + 1}")
-                        return@setMidiCallback
-                    }
-                    
-                    if (isLearningBackward) {
-                        backwardCC = cc
-                        backwardChannel = channel
-                        isLearningBackward = false
-                        midiLearnBackwardSetting.set("CC $cc Ch ${channel + 1}")
-                        host.showPopupNotification("Backward mapped to CC $cc Channel ${channel + 1}")
-                        return@setMidiCallback
-                    }
-                    
-                    if (isLearningNoteValue) {
-                        noteValueCC = cc
-                        noteValueChannel = channel
-                        isLearningNoteValue = false
-                        midiLearnNoteValueSetting.set("CC $cc Ch ${channel + 1}")
-                        host.showPopupNotification("Note Value Control mapped to CC $cc Channel ${channel + 1}")
-                        return@setMidiCallback
-                    }
-                    
-                    if (isLearningClear) {
-                        clearCC = cc
-                        clearChannel = channel
-                        isLearningClear = false
-                        midiLearnClearSetting.set("CC $cc Ch ${channel + 1}")
-                        host.showPopupNotification("Clear Button mapped to CC $cc Channel ${channel + 1}")
-                        return@setMidiCallback
-                    }
-                    
-                    // Check if this CC matches learned forward/backward controls
-                    if (cc == forwardCC && channel == forwardChannel && value > 0) {
-                        cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
-                        host.showPopupNotification("Cursor moved forward to: ${String.format("%.3f", cursorPosition)} beats")
-                        updateCursorSelection()
-                        return@setMidiCallback
-                    }
-                    
-                    if (cc == backwardCC && channel == backwardChannel && value > 0) {
-                        cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
-                        host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
-                        updateCursorSelection()
-                        return@setMidiCallback
-                    }
-                    
-                    // Check if this CC matches learned note value control
-                    if (cc == noteValueCC && channel == noteValueChannel) {
-                        val noteValueIndex = mapCCToNoteValueIndex(value)
-                        val noteValues = arrayOf(
-                            "32/1", "16/1", "8/1", "4/1", "2/1", "1/1",
-                            "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
-                        )
-                        if (noteValueIndex in noteValues.indices) {
-                            noteValueSetting.set(noteValues[noteValueIndex])
-                            host.showPopupNotification("Note Value: ${noteValues[noteValueIndex]}")
-                        }
-                        return@setMidiCallback
-                    }
-                    
-                    // Check if this CC matches learned clear control
-                    if (cc == clearCC && channel == clearChannel && value > 0) {
-                        clearNotesAtCursor()
-                        return@setMidiCallback
-                    }
-                }
-                
+                // Pass CC messages to MIDI learn bindings
+                if (forwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
+                if (backwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
+                if (noteValueBinding.handleMidiMessage(status, data1, data2)) {
+                     // For the note value binding, we need to map the CC value
+                     val noteValueIndex = mapCCToNoteValueIndex(data2)
+                     val noteValues = arrayOf(
+                         "32/1", "16/1", "8/1", "4/1", "2/1", "1/1",
+                         "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
+                     )
+                     if (noteValueIndex in noteValues.indices) {
+                         noteValueSetting.set(noteValues[noteValueIndex])
+                         host.showPopupNotification("Note Value: ${noteValues[noteValueIndex]}")
+                     }
+                     return@setMidiCallback
+                 }
+                if (clearBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
+
                 // Check if it's a Note On message (status 0x90-0x9F)
                 if (status in 0x90..0x9F) {
                     val note = data1
@@ -290,92 +218,37 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     }
     
     private fun setupMidiLearnSettings() {
-        // MIDI learn for forward button
-        midiLearnForwardSetting = preferences.getEnumSetting(
-            "Forward Button",
-            "MIDI Learn",
-            arrayOf("Not Mapped", "Learning..."),
-            "Not Mapped"
-        )
-        
-        midiLearnForwardSetting.addValueObserver { value ->
-            when (value) {
-                "Learning..." -> {
-                    isLearningForward = true
-                    host.showPopupNotification("Learning Forward Button - Send a CC message")
-                }
-                "Not Mapped" -> {
-                    forwardCC = -1
-                    forwardChannel = -1
-                    host.showPopupNotification("Forward button unmapped")
-                }
-            }
+        // Create MIDI learn bindings
+        forwardBinding = MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped") {
+            cursorPosition = (cursorPosition + noteLength).coerceAtLeast(0.0)
+            host.showPopupNotification("Cursor moved forward to: ${String.format("%.3f", cursorPosition)} beats")
+            updateCursorSelection()
         }
-        
-        // MIDI learn for backward button
-        midiLearnBackwardSetting = preferences.getEnumSetting(
-            "Backward Button",
-            "MIDI Learn",
-            arrayOf("Not Mapped", "Learning..."),
-            "Not Mapped"
-        )
-        
-        midiLearnBackwardSetting.addValueObserver { value ->
-            when (value) {
-                "Learning..." -> {
-                    isLearningBackward = true
-                    host.showPopupNotification("Learning Backward Button - Send a CC message")
-                }
-                "Not Mapped" -> {
-                    backwardCC = -1
-                    backwardChannel = -1
-                    host.showPopupNotification("Backward button unmapped")
-                }
-            }
+
+        backwardBinding = MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped") {
+            cursorPosition = (cursorPosition - noteLength).coerceAtLeast(0.0)
+            host.showPopupNotification("Cursor moved backward to: ${String.format("%.3f", cursorPosition)} beats")
+            updateCursorSelection()
         }
-        
-        // MIDI learn for note value control
-        midiLearnNoteValueSetting = preferences.getEnumSetting(
-            "Note Value Control",
-            "MIDI Learn",
-            arrayOf("Not Mapped", "Learning..."),
-            "Not Mapped"
-        )
-        
-        midiLearnNoteValueSetting.addValueObserver { value ->
-            when (value) {
-                "Learning..." -> {
-                    isLearningNoteValue = true
-                    host.showPopupNotification("Learning Note Value Control - Send a CC message")
-                }
-                "Not Mapped" -> {
-                    noteValueCC = -1
-                    noteValueChannel = -1
-                    host.showPopupNotification("Note value control unmapped")
-                }
-            }
+
+        noteValueBinding = MidiLearnBinding(host, "Note Value Control", "MIDI Learn", "Not Mapped") { value ->
+            // This binding triggers when a CC message matching the learned value control is received.
+            // The MidiLearnBinding class handles mapping the CC value to the preference string.
+            // The noteValueSetting's existing observer handles updating the noteLength.
+            // So, we don't need to do anything specific here, the observer linkage handles it.
+            val noteValueIndex = mapCCToNoteValueIndex(value) // Use the received MIDI value
+             val noteValues = arrayOf(
+                 "32/1", "16/1", "8/1", "4/1", "2/1", "1/1",
+                 "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
+             )
+             if (noteValueIndex in noteValues.indices) {
+                 noteValueSetting.set(noteValues[noteValueIndex])
+                 host.showPopupNotification("Note Value: ${noteValues[noteValueIndex]}")
+             }
         }
-        
-        // MIDI learn for clear control
-        midiLearnClearSetting = preferences.getEnumSetting(
-            "Clear Button",
-            "MIDI Learn",
-            arrayOf("Not Mapped", "Learning..."),
-            "Not Mapped"
-        )
-        
-        midiLearnClearSetting.addValueObserver { value ->
-            when (value) {
-                "Learning..." -> {
-                    isLearningClear = true
-                    host.showPopupNotification("Learning Clear Button - Send a CC message")
-                }
-                "Not Mapped" -> {
-                    clearCC = -1
-                    clearChannel = -1
-                    host.showPopupNotification("Clear button unmapped")
-                }
-            }
+
+        clearBinding = MidiLearnBinding(host, "Clear Button", "MIDI Learn", "Not Mapped") {
+            clearNotesAtCursor()
         }
     }
     
