@@ -90,10 +90,10 @@ class MidiLearnBinding(
             }
 
             // If not learning, check if the message matches the learned binding
-            if (cc != -1 && channel != -1 && messageCC == cc && messageChannel == channel) {
+            if (cc != -1 && channel != -1 && messageCC == cc && messageChannel == channel && value != 0) {
                  // For CC messages, trigger the callback with the value
                 onTrigger.invoke(value) 
-                // host.showPopupNotification("$name triggered with value $value") // Optional feedback
+
                 return true // Message was handled (triggered)
             }
         }

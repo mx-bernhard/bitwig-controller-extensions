@@ -20,6 +20,7 @@ import com.bitwig.extension.api.util.midi.ShortMidiMessage
 import java.util.*
 import com.bitwig.extension.controller.api.Signal
 import com.bitwig.extension.controller.api.Preferences
+import com.bitwig.extension.controller.api.SettableBooleanValue
 import com.bitwig.extension.controller.api.SettableEnumValue
 
 class StepSequencerExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
@@ -36,9 +37,12 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     private lateinit var tripletSetting: SettableEnumValue
     private lateinit var cursorForwardAction: Signal
     private lateinit var cursorBackwardAction: Signal
+
+    private lateinit var enableSetting: SettableBooleanValue
     private lateinit var preferences: Preferences
     
     // MIDI Learn Bindings
+    private lateinit var enableBinding: MidiLearnBinding
     private lateinit var forwardBinding: MidiLearnBinding
     private lateinit var backwardBinding: MidiLearnBinding
     private lateinit var noteValueBinding: MidiLearnBinding
@@ -87,6 +91,8 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         
         // Mark transport play position as interested to track cursor
         transport.playPosition().markInterested()
+        // disable step recording when playing
+        transport.isPlaying().markInterested()
         
         // Add observer to debug clip changes
         cursorClip.exists().addValueObserver { exists ->
@@ -118,7 +124,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             if (cursorClip.exists().get()) {
                 cursorClip.setStepSize(noteLengthInBeats())
             }
-            host.showPopupNotification("Note Length: ${noteValueSetting.get()} ${tripletSetting.get()} (${integerBasedNoteLength} beats)")
+            host.showPopupNotification("Note Length: ${noteValueSetting.get()} ${tripletSetting.get()} (${integerBasedToBeats(integerBasedNoteLength)} beats)")
         }
         
         noteValueSetting.addValueObserver { updateNoteLength() }
@@ -138,22 +144,23 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Step Sequencer", "Backward")
         
         val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Sequencer", "Clear")
+        cursorClearAction.addSignalObserver {
+            clearNotesAtCursor()
+        }
+
+        enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Sequencer", false)
 
         // Add observers for cursor movement
         cursorForwardAction.addSignalObserver { 
             cursorPosition = (cursorPosition + integerBasedNoteLength).coerceAtLeast(0)
-            host.showPopupNotification("Cursor moved forward to: ${cursorPosition} beats")
+            host.showPopupNotification("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
         }
 
         cursorBackwardAction.addSignalObserver { 
             cursorPosition = (cursorPosition - integerBasedNoteLength).coerceAtLeast(0)
-            host.showPopupNotification("Cursor moved backward to: ${cursorPosition} beats")
+            host.showPopupNotification("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
-        }
-        
-        cursorClearAction.addSignalObserver { 
-            clearNotesAtCursor()
         }
 
         // Get MIDI input port and set up input/callback (only if a MIDI port is assigned)
@@ -167,6 +174,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                 val currentTime = System.currentTimeMillis()
                 
                 // Pass CC messages to MIDI learn bindings
+                if (enableBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
                 if (forwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
                 if (backwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
                 if (noteValueBinding.handleMidiMessage(status, data1, data2)) {
@@ -235,15 +243,20 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     
     private fun setupMidiLearnSettings() {
         // Create MIDI learn bindings
+        enableBinding = MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
+            enableSetting.set(!enableSetting.get())
+            val text = if (enableSetting.get()) "Enabled" else "Disabled"
+            host.showPopupNotification(text)
+        }
         forwardBinding = MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped") {
             cursorPosition = (cursorPosition + integerBasedNoteLength).coerceAtLeast(0)
-            host.showPopupNotification("Cursor moved forward to: ${cursorPosition} beats")
+            host.showPopupNotification("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
         }
 
         backwardBinding = MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped") {
             cursorPosition = (cursorPosition - integerBasedNoteLength).coerceAtLeast(0)
-            host.showPopupNotification("Cursor moved backward to: ${cursorPosition} beats")
+            host.showPopupNotification("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
         }
 
@@ -343,6 +356,10 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             host.showPopupNotification("No active clip found. Create or select a clip and open piano roll.")
             return
         }
+        if (transport.isPlaying().get()) {
+            host.println("Step recording disabled, transport is playing")
+            return
+        }
 
         try {
             // Use our own cursor position for note placement
@@ -376,7 +393,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             cursorPosition += integerBasedNoteLength
             
             // Update visual selection to show new cursor position
-            //updateCursorSelection()
+            updateCursorSelection()
             
             val noteNames = notes.map { getNoteNameFromMidi(it) }.joinToString(", ")
             if (notes.size == 1) {
@@ -483,7 +500,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             // Clear all notes at this step position
             cursorClip.clearStepsAtX(0, wrappedStepIndex)
             
-            host.showPopupNotification("Cleared notes at beat ${cursorPosition}, step $wrappedStepIndex")
+            host.showPopupNotification("Cleared notes at beat ${integerBasedToBeats(cursorPosition)}, step $wrappedStepIndex")
             
         } catch (e: Exception) {
             host.showPopupNotification("Error clearing notes: ${e.message}")
