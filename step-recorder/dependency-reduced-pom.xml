@@ -6,8 +6,8 @@
     <version>0.1</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>step-sequencer</artifactId>
-  <name>Step Sequencer</name>
+  <artifactId>step-recorder</artifactId>
+  <name>Step Recorder</name>
   <build>
     <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
     <plugins>
@@ -50,10 +50,10 @@
               <createDependencyReducedPom>true</createDependencyReducedPom>
               <manifest>
                 <addClasspath>true</addClasspath>
-                <mainClass>com.b3rnhard.stepsequencer.StepSequencerExtensionDefinition</mainClass>
+                <mainClass>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition</mainClass>
               </manifest>
               <manifestEntries>
-                <Extension-Class>com.b3rnhard.stepsequencer.StepSequencerExtensionDefinition</Extension-Class>
+                <Extension-Class>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition</Extension-Class>
               </manifestEntries>
             </configuration>
           </execution>

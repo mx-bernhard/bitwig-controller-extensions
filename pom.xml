@@ -9,7 +9,7 @@
 	<version>0.1</version>
 
 	<modules>
-		<module>step-sequencer</module>
+		<module>step-recorder</module>
 		<module>midi-splitter</module>
 		<module>pattern-tracker</module>
 	</modules>

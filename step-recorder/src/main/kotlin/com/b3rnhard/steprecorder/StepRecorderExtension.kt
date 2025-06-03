@@ -1,4 +1,4 @@
-package com.b3rnhard.stepsequencer
+package com.b3rnhard.steprecorder
 
 import com.bitwig.extension.api.PlatformType
 import com.bitwig.extension.controller.api.ControllerHost
@@ -23,7 +23,7 @@ import com.bitwig.extension.controller.api.Preferences
 import com.bitwig.extension.controller.api.SettableBooleanValue
 import com.bitwig.extension.controller.api.SettableEnumValue
 
-class StepSequencerExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
+class StepRecorderExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
 
     private lateinit var documentState: DocumentState
     private lateinit var application: Application
@@ -40,14 +40,18 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
 
     private lateinit var enableSetting: SettableBooleanValue
     private lateinit var preferences: Preferences
-    
+
     // MIDI Learn Bindings
     private lateinit var enableBinding: MidiLearnBinding
     private lateinit var forwardBinding: MidiLearnBinding
     private lateinit var backwardBinding: MidiLearnBinding
     private lateinit var noteValueBinding: MidiLearnBinding
     private lateinit var clearBinding: MidiLearnBinding
-    
+
+    private var stepsAmount: Int = 128
+
+    private var resolutionFactor: Int = 4
+
     private var integerBasedNoteLength: Int = Math.round(0.25 * 64 * 3).toInt() // Default to 16th note
 
     private fun integerBasedToBeats(integerValue: Int): Double {
@@ -62,7 +66,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
 
     private var cursorPosition: Int = 0
     private var isUpdatingSelection = false
-    
+
     // Chord detection
     private val activeNotes = mutableMapOf<Int, Long>()
     private val pendingNotes = mutableSetOf<Int>()
@@ -81,19 +85,19 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         cursorTrack = host.createCursorTrack("stepsequencer:CursorTrack", "Cursor Track", 0, 0, true)
 
         // Create global launcher cursor clip (follows the global clip launcher selection)
-        cursorClip = host.createLauncherCursorClip(128, 128)
+        cursorClip = host.createLauncherCursorClip(stepsAmount * resolutionFactor, 128)
 
         // Mark the clip existence as interested so we can read it later
         cursorClip.exists().markInterested()
-        
+
         // Mark clip play start position as interested so we can read it
         cursorClip.getPlayStart().markInterested()
-        
+
         // Mark transport play position as interested to track cursor
         transport.playPosition().markInterested()
         // disable step recording when playing
         transport.isPlaying().markInterested()
-        
+
         // Add observer to debug clip changes
         cursorClip.exists().addValueObserver { exists ->
             host.showPopupNotification("Clip exists: $exists")
@@ -102,14 +106,14 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         // Create a setting for note length using document state
         noteValueSetting = documentState.getEnumSetting(
             "Note Value", // name
-            "Step Sequencer", // category  
+            "Step Sequencer", // category
             arrayOf(
                 "32/1", "16/1", "8/1", "4/1", "2/1", "1/1", // Whole note and longer
                 "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" // Half note and shorter
             ),
             "1/16" // initial value (16th note)
         )
-        
+
         tripletSetting = documentState.getEnumSetting(
             "Note Type",
             "Step Sequencer",
@@ -122,11 +126,11 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             integerBasedNoteLength = calculateNoteLengthInIntegerRepresentation(noteValueSetting.get(), tripletSetting.get())
             host.println("Note length: ${noteLengthInBeats().toString()}")
             if (cursorClip.exists().get()) {
-                cursorClip.setStepSize(noteLengthInBeats())
+                cursorClip.setStepSize(noteLengthInBeats() / resolutionFactor)
             }
             host.showPopupNotification("Note Length: ${noteValueSetting.get()} ${tripletSetting.get()} (${integerBasedToBeats(integerBasedNoteLength)} beats)")
         }
-        
+
         noteValueSetting.addValueObserver { updateNoteLength() }
         tripletSetting.addValueObserver { updateNoteLength() }
 
@@ -139,10 +143,10 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         // Initialize cursor position to current clip start position if clip exists, otherwise transport position
         updateCursorFromClipOrTransport()
 
-        // Create cursor movement actions that can be triggered from document state  
+        // Create cursor movement actions that can be triggered from document state
         cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Step Sequencer", "Forward")
         cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Step Sequencer", "Backward")
-        
+
         val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Sequencer", "Clear")
         cursorClearAction.addSignalObserver {
             clearNotesAtCursor()
@@ -151,13 +155,13 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Sequencer", false)
 
         // Add observers for cursor movement
-        cursorForwardAction.addSignalObserver { 
+        cursorForwardAction.addSignalObserver {
             cursorPosition = (cursorPosition + integerBasedNoteLength).coerceAtLeast(0)
             host.showPopupNotification("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
         }
 
-        cursorBackwardAction.addSignalObserver { 
+        cursorBackwardAction.addSignalObserver {
             cursorPosition = (cursorPosition - integerBasedNoteLength).coerceAtLeast(0)
             host.showPopupNotification("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
             updateCursorSelection()
@@ -172,7 +176,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             // Set up a MIDI callback to handle note on/off for chord detection and MIDI learn
             midiIn.setMidiCallback { status: Int, data1: Int, data2: Int ->
                 val currentTime = System.currentTimeMillis()
-                
+
                 // Pass CC messages to MIDI learn bindings
                 if (enableBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
                 if (forwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
@@ -196,12 +200,12 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                 if (status in 0x90..0x9F) {
                     val note = data1
                     val velocity = data2
-                    
+
                     if (velocity > 0) {
                         // Note On
                         activeNotes[note] = currentTime
                         pendingNotes.add(note)
-                        
+
                         // Track first note time only when starting a new chord
                         if (pendingNotes.size == 1) {
                             firstNoteTime = currentTime
@@ -210,7 +214,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                     } else {
                         // Note Off (velocity 0)
                         activeNotes.remove(note)
-                        
+
                         // If no notes are currently held, process pending notes
                         if (activeNotes.isEmpty()) {
                             processPendingNotes()
@@ -221,14 +225,14 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                 else if (status in 0x80..0x8F) {
                     val note = data1
                     activeNotes.remove(note)
-                    
+
                     // If no notes are currently held, process pending notes
                     if (activeNotes.isEmpty()) {
                         processPendingNotes()
                     }
                 }
             }
-            
+
             host.showPopupNotification("Step Sequencer Initialized with MIDI Input")
         } catch (e: Exception) {
             host.showPopupNotification("Step Sequencer Initialized (No MIDI Input Assigned)")
@@ -236,11 +240,11 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         }
 
         host.showPopupNotification("Use controller preferences to learn forward/backward buttons!")
-        
+
         // Set up note selection observer to track selected notes and update cursor position
         setupNoteSelectionObserver()
     }
-    
+
     private fun setupMidiLearnSettings() {
         // Create MIDI learn bindings
         enableBinding = MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
@@ -280,7 +284,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             clearNotesAtCursor()
         }
     }
-    
+
     private fun setupNoteSelectionObserver() {
         // Add observer for note step selection changes
         cursorClip.addNoteStepObserver { isNoteStepOn ->
@@ -289,34 +293,34 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             }
         }
     }
-    
+
     private fun updateCursorSelection() {
         // Visual feedback: select notes at current cursor position
         if (!cursorClip.exists().get()) return
-        
+
         isUpdatingSelection = true
         try {
             // Use the current noteLength as the stepSize for selection
             val stepSize = integerBasedNoteLength
             val absoluteStepIndex = cursorPosition / stepSize
-            
+
             // Keep step index within the valid range (0-127)
-            val stepIndex = absoluteStepIndex % 128
-            
+            val stepIndex = absoluteStepIndex % stepsAmount
+
             // Clear all selections by selecting step 0 with clearCurrentSelection=true
             cursorClip.selectStepContents(0, 0, 0, true) // Clear all selections
-            
+
             // Now select all notes at the cursor position (iterate through all possible keys)
-            for (key in 0..127) {
+            for (key in 0..stepsAmount*resolutionFactor) {
                 // Select each note that might exist at this position
-                cursorClip.selectStepContents(0, stepIndex, key, false) // Don't clear previous selections
+                cursorClip.selectStepContents(0, stepIndex * resolutionFactor, key, false) // Don't clear previous selections
             }
-            
+
         } finally {
             isUpdatingSelection = false
         }
     }
-    
+
     private fun updateCursorFromSelectedNotes() {
         // Find the smallest start position of any selected notes
         // This is complex to implement properly, so for now just a placeholder
@@ -327,14 +331,14 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
         if (pendingNotes.isNotEmpty()) {
             // Check if all notes were played close together (chord) or separately
             val noteList = pendingNotes.sorted()
-            
+
             if (noteList.size == 1) {
                 // Single note
                 addNotesToCurrentClip(noteList, 127) // Use default velocity
             } else {
                 // Multiple notes - check if they should be a chord
                 val noteTimeSpan = lastNoteOnTime - firstNoteTime
-                
+
                 if (noteTimeSpan <= chordThresholdMs) {
                     // Notes were pressed close together - place as chord
                     addNotesToCurrentClip(noteList, 127)
@@ -345,7 +349,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                     }
                 }
             }
-            
+
             pendingNotes.clear()
         }
     }
@@ -366,20 +370,20 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             val positionInInteger = cursorPosition
             // Calculate the step index based on the current clip step size (noteLength)
             val stepIndex = positionInInteger / integerBasedNoteLength
-            
+
             // Keep step index within the valid range (0-127 for a 128 step clip)
             // The number of steps in the clip might vary, so this needs to be more robust
             // For now, let's assume a large enough number of steps or handle wrapping.
             // A more robust approach would be to get the clip's actual step count.
-            val wrappedStepIndex = stepIndex % 128 // Example, assumes 128 steps
+            val wrappedStepIndex = stepIndex % stepsAmount // Example, assumes 128 steps
             host.println("spositionInInteger: ${positionInInteger}, noteLength: ${integerBasedNoteLength}, stepIndex: ${stepIndex}, wrappedStepIndex: ${wrappedStepIndex}")
             // Clear all existing notes at this step position
             host.println("Clear at ${wrappedStepIndex}")
-            // doesn't work properly with Triplet step size, deletes two notes every three 
-            if (tripletSetting.get() != "Triplet") {
-                cursorClip.clearStepsAtX(0, wrappedStepIndex)
-            }
-            
+            // doesn't work properly with Triplet step size, deletes two notes every three
+            //if (tripletSetting.get() != "Triplet") {
+                cursorClip.clearStepsAtX(0, wrappedStepIndex * resolutionFactor)
+            //}
+
             // Add all notes at the same position (chord)
             notes.forEach { note ->
                 // The `noteLength` here is the *duration* of the note being placed.
@@ -388,20 +392,20 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
                 host.println("setStep y:${note}, x:${wrappedStepIndex}")
                 cursorClip.setStep(0, wrappedStepIndex, note, velocity, noteLengthInBeats())
             }
-            
+
             // Advance cursor position by the note length (only once, not per note)
             cursorPosition += integerBasedNoteLength
-            
+
             // Update visual selection to show new cursor position
             updateCursorSelection()
-            
+
             val noteNames = notes.map { getNoteNameFromMidi(it) }.joinToString(", ")
             if (notes.size == 1) {
                 host.showPopupNotification("Added ${noteNames} at beat ${positionInInteger}, step $wrappedStepIndex")
             } else {
                 host.showPopupNotification("Added chord [${noteNames}] at beat ${positionInInteger}, step $wrappedStepIndex")
             }
-            
+
         } catch (e: Exception) {
             host.showPopupNotification("Error adding notes: ${e.message}")
             host.println("Error details: ${e}")
@@ -436,7 +440,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
             cursorPosition = beatsToIntegerBased(transport.playPosition().get())
         }
     }
-    
+
     /**
      * Calculate note length in beats based on note value and triplet setting
      * Assumes 4/4 time signature where 1 whole note = 4 beats
@@ -473,12 +477,12 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     private fun mapCCToNoteValueIndex(ccValue: Int): Int {
         // Clamp CC value to valid range
         val clampedCC = ccValue.coerceIn(0, 127)
-        
+
         // Map to index 0-11 (12 note values total)
         // Using 127/11 ≈ 11.55, so each segment is about 10.6 CC values wide
         return (clampedCC * 11 / 127).coerceIn(0, 11)
     }
-    
+
     /**
      * Clear all notes at the current cursor position
      * Converts note positions into rests/gaps
@@ -496,12 +500,12 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
 
             // Keep step index within the valid range (0-127)
             val wrappedStepIndex = stepIndex % 128
-            
+
             // Clear all notes at this step position
             cursorClip.clearStepsAtX(0, wrappedStepIndex)
-            
+
             host.showPopupNotification("Cleared notes at beat ${integerBasedToBeats(cursorPosition)}, step $wrappedStepIndex")
-            
+
         } catch (e: Exception) {
             host.showPopupNotification("Error clearing notes: ${e.message}")
             host.println("Error details: ${e}")
@@ -511,7 +515,7 @@ class StepSequencerExtension(definition: ControllerExtensionDefinition, host: Co
     companion object {
         @JvmStatic
         fun createExtensionInstance(definition: ControllerExtensionDefinition, host: ControllerHost): ControllerExtension {
-            return StepSequencerExtension(definition, host)
+            return StepRecorderExtension(definition, host)
         }
     }
-} 
+}

@@ -9,9 +9,9 @@
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 
-	<artifactId>step-sequencer</artifactId>
+	<artifactId>step-recorder</artifactId>
 	<packaging>jar</packaging>
-	<name>Step Sequencer</name>
+	<name>Step Recorder</name>
 
 	<dependencies>
 		<dependency>
@@ -68,10 +68,10 @@
 							<createDependencyReducedPom>true</createDependencyReducedPom>
 							<manifest>
 								<addClasspath>true</addClasspath>
-								<mainClass>com.b3rnhard.stepsequencer.StepSequencerExtensionDefinition</mainClass>
+								<mainClass>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition</mainClass>
 							</manifest>
 							<manifestEntries>
-								<Extension-Class>com.b3rnhard.stepsequencer.StepSequencerExtensionDefinition</Extension-Class>
+								<Extension-Class>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition</Extension-Class>
 							</manifestEntries>
 						</configuration>
 					</execution>

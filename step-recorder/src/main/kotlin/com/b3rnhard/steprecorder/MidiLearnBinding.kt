@@ -1,4 +1,4 @@
-package com.b3rnhard.stepsequencer
+package com.b3rnhard.steprecorder
 
 import com.bitwig.extension.controller.api.ControllerHost
 import com.bitwig.extension.controller.api.SettableEnumValue
@@ -42,9 +42,9 @@ class MidiLearnBinding(
                 }
             }
         }
-        
+
         // Trigger observer once on initialization to load any saved value
-        setting.get(); 
+        setting.get();
     }
 
     private fun parseAndSetMidiBinding(value: String) {
@@ -92,11 +92,11 @@ class MidiLearnBinding(
             // If not learning, check if the message matches the learned binding
             if (cc != -1 && channel != -1 && messageCC == cc && messageChannel == channel && value != 0) {
                  // For CC messages, trigger the callback with the value
-                onTrigger.invoke(value) 
+                onTrigger.invoke(value)
 
                 return true // Message was handled (triggered)
             }
         }
         return false // Message was not handled by this binding
     }
-} 
+}
