@@ -1,0 +1,99 @@
+package com.b3rnhard.steprecorder
+
+import com.bitwig.extension.controller.api.Clip
+import com.bitwig.extension.controller.api.ControllerHost
+import kotlin.math.roundToInt
+
+class Stepper(val host: ControllerHost, val getClip: () -> Clip) {
+    var cursorPosition: Int = 0
+
+    private var stepsAmount: Int = 128
+
+    private var resolutionFactor: Int = 2
+
+    public val cursorSteps
+        get() = this.stepsAmount * this.resolutionFactor
+
+    /**
+     * 3: so that it is divisible by 3
+     * 64: so that the smallest note length is still an integer value when integer based
+     */
+    private val integerBasedFactor = 64.0 * 3.0
+
+    // Default to 16th note
+    private var integerBasedNoteLength: Int = (0.25 * integerBasedFactor).roundToInt()
+
+    private fun integerBasedToBeats(integerValue: Int): Double {
+        return integerValue / integerBasedFactor;
+    }
+
+    private fun beatsToIntegerBased(beatsValue: Double): Int {
+        return (beatsValue * integerBasedFactor).roundToInt()
+    }
+
+    val noteLengthInBeats: Double
+        get() = integerBasedToBeats(integerBasedNoteLength)
+
+    fun forward():Unit {
+        cursorPosition = (cursorPosition + integerBasedNoteLength * resolutionFactor).coerceAtLeast(0)
+        // clip.scrollStepsStepForward()
+        host.println("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
+    }
+
+    fun backward():Unit {
+        cursorPosition = (cursorPosition - integerBasedNoteLength * resolutionFactor).coerceAtLeast(0)
+        // clip.scrollStepsStepBackwards()
+        host.println("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
+    }
+
+    val x: Int
+        get() {
+            // Use the current noteLength as the stepSize for selection
+            val stepSize = integerBasedNoteLength
+            val absoluteStepIndex = cursorPosition / stepSize
+
+            // Keep step index within the valid range (0-127)
+            val stepIndex = absoluteStepIndex % stepsAmount
+            return stepIndex
+        }
+
+    fun setXFromBeats(beats: Double) {
+        cursorPosition = beatsToIntegerBased(beats)
+    }
+    /**
+     * Calculate note length in beats based on note value and triplet setting
+     * Assumes 4/4 time signature where 1 whole note = 4 beats
+     */
+    fun updateNoteLengthInIntegerRepresentation(noteValue: String, noteType: String) {
+        // Calculate base note length in beats (4/4 time signature)
+        val baseLength:Int = beatsToIntegerBased(when (noteValue) {
+            "32/1" -> 128.0  // 32 whole notes
+            "16/1" -> 64.0  // 16 whole notes
+            "8/1" -> 32.0    // 8 whole notes
+            "4/1" -> 16.0    // 4 whole notes
+            "2/1" -> 8.0     // 2 whole notes
+            "1/1" -> 4.0     // 1 whole note
+            "1/2" -> 2.0     // Half note
+            "1/4" -> 1.0     // Quarter note
+            "1/8" -> 0.5     // Eighth note
+            "1/16" -> 0.25   // Sixteenth note
+            "1/32" -> 0.125  // Thirty-second note
+            "1/64" -> 0.0625 // Sixty-fourth note
+            else -> 0.25     // Default to 16th note
+        })
+        // Apply triplet timing if selected (2/3 of regular note length)
+        if (noteType != "Triplet") {
+            integerBasedNoteLength = baseLength
+        } else {
+            integerBasedNoteLength = baseLength * 2 / 3
+        }
+        host.println("Note length: $noteLengthInBeats")
+        if (getClip().exists().get()) {
+            val stepSize = noteLengthInBeats / resolutionFactor
+            getClip().setStepSize(stepSize)
+            host.println("Clip step size: $stepSize")
+        }
+        host.showPopupNotification("Note Length: $noteValue $noteType")
+
+    }
+}
