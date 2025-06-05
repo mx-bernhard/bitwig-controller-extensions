@@ -138,7 +138,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
             }
 
             host.showPopupNotification("Step Recorder Initialized with MIDI Input")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             host.showPopupNotification("Step Recorder Initialized (No MIDI Input Assigned)")
             host.println("No MIDI input assigned - MIDI learn and note input features disabled")
         }

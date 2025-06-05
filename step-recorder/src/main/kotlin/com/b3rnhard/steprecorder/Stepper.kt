@@ -11,7 +11,7 @@ class Stepper(val host: ControllerHost, val getClip: () -> Clip) {
 
     private var resolutionFactor: Int = 1
 
-    public val cursorSteps
+    val cursorSteps
         get() = this.stepsAmount * this.resolutionFactor
 
     /**
@@ -34,13 +34,13 @@ class Stepper(val host: ControllerHost, val getClip: () -> Clip) {
     val noteLengthInBeats: Double
         get() = integerBasedToBeats(integerBasedNoteLength)
 
-    fun forward():Unit {
+    fun forward() {
         cursorPosition = (cursorPosition + integerBasedNoteLength * resolutionFactor).coerceAtLeast(0)
         // clip.scrollStepsStepForward()
         host.println("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
     }
 
-    fun backward():Unit {
+    fun backward() {
         cursorPosition = (cursorPosition - integerBasedNoteLength * resolutionFactor).coerceAtLeast(0)
         // clip.scrollStepsStepBackwards()
         host.println("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
