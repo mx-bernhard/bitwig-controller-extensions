@@ -9,7 +9,7 @@ class Stepper(val host: ControllerHost, val getClip: () -> Clip) {
 
     private var stepsAmount: Int = 128
 
-    private var resolutionFactor: Int = 2
+    private var resolutionFactor: Int = 1
 
     public val cursorSteps
         get() = this.stepsAmount * this.resolutionFactor

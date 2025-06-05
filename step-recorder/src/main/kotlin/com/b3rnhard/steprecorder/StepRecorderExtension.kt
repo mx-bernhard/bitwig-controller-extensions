@@ -14,7 +14,6 @@ import com.bitwig.extension.controller.api.Signal
 import com.bitwig.extension.controller.api.Preferences
 import com.bitwig.extension.controller.api.SettableBooleanValue
 import com.bitwig.extension.controller.api.SettableEnumValue
-import kotlin.math.IEEErem
 
 class StepRecorderExtension(definition: ControllerExtensionDefinition, host: ControllerHost) : ControllerExtension(definition, host) {
 
@@ -25,7 +24,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     private lateinit var cursorClip: Clip
     private lateinit var midiIn: MidiIn
     private lateinit var noteInput: NoteInput
-    private lateinit var noteValueSetting: SettableEnumValue
+    private lateinit var stepLengthValueSetting: SettableEnumValue
 
     private lateinit var tripletSetting: SettableEnumValue
     private lateinit var cursorForwardAction: Signal
@@ -34,12 +33,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     private lateinit var enableSetting: SettableBooleanValue
     private lateinit var preferences: Preferences
 
-    // MIDI Learn Bindings
-    private lateinit var enableBinding: MidiLearnBinding
-    private lateinit var forwardBinding: MidiLearnBinding
-    private lateinit var backwardBinding: MidiLearnBinding
-    private lateinit var noteLengthValueBinding: MidiLearnBinding
-    private lateinit var clearBinding: MidiLearnBinding
+    private val midiLearnBindings = mutableListOf<MidiLearnBinding>()
 
     private lateinit var stepper: Stepper
 
@@ -82,63 +76,16 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
             host.println("Clip exists: $exists")
         }
 
-        // Create a setting for note length using document state
-        noteValueSetting = documentState.getEnumSetting(
-            "Note Value", // name
-            "Step Recorder", // category
-            arrayOf(
-                "32/1", "16/1", "8/1", "4/1", "2/1", "1/1", // Whole note and longer
-                "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" // Half note and shorter
-            ),
-            "1/16" // initial value (16th note)
-        )
+        setupNoteType()
+        setupForward()
+        setupBackward()
+        setupEnable()
+        setupNoteValue()
+        setupClear()
+        setupNoteSelectionObserver()
 
-        tripletSetting = documentState.getEnumSetting(
-            "Note Type",
-            "Step Recorder",
-            arrayOf("Regular", "Triplet"),
-            "Regular"
-        )
-
-        // Add observers to update noteLength when either setting changes
-        val updateNoteLength = {
-            stepper.updateNoteLengthInIntegerRepresentation(noteValueSetting.get(), tripletSetting.get())
-        }
-
-        noteValueSetting.addValueObserver { updateNoteLength() }
-        tripletSetting.addValueObserver { updateNoteLength() }
-
-        // Initialize noteLength with current setting values
-        updateNoteLength()
-
-        // Setup MIDI learn preferences
-        setupMidiLearnSettings()
-
-        // Initialize cursor position to current clip start position if clip exists, otherwise transport position
+        updateStepLength()
         updateCursorFromClipOrTransport()
-
-
-        val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Recorder", "Clear")
-        cursorClearAction.addSignalObserver {
-            clearNotesAtCursor()
-        }
-
-        enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Recorder", false)
-
-        // Create cursor movement actions that can be triggered from document state
-        cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Step Recorder", "Forward")
-        cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Step Recorder", "Backward")
-
-        // Add observers for cursor movement
-        cursorForwardAction.addSignalObserver {
-            stepper.forward()
-            updateCursorSelection()
-        }
-
-        cursorBackwardAction.addSignalObserver {
-            stepper.backward()
-            updateCursorSelection()
-        }
 
         // Get MIDI input port and set up input/callback (only if a MIDI port is assigned)
         try {
@@ -151,13 +98,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
                 val currentTime = System.currentTimeMillis()
 
                 // Pass CC messages to MIDI learn bindings
-                if (enableBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
-                if (forwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
-                if (backwardBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
-                if (noteLengthValueBinding.handleMidiMessage(status, data1, data2)) {
-                    changeNoteLengthValue(data2)
-                 }
-                if (clearBinding.handleMidiMessage(status, data1, data2)) return@setMidiCallback
+                if (midiLearnBindings.any { it.handleMidiMessage(status, data1, data2) }) return@setMidiCallback
 
                 // Check if it's a Note On message (status 0x90-0x9F)
                 if (status in 0x90..0x9F) {
@@ -203,37 +144,89 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         }
 
         host.showPopupNotification("Use controller preferences to learn forward/backward buttons!")
-
-        // Set up note selection observer to track selected notes and update cursor position
-        setupNoteSelectionObserver()
     }
 
-    private fun setupMidiLearnSettings() {
-        // Create MIDI learn bindings
-        enableBinding = MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
-            enableSetting.set(!enableSetting.get())
-            val text = if (enableSetting.get()) "Enabled" else "Disabled"
-            host.showPopupNotification(text)
+    private fun updateStepLength() {
+        stepper.updateNoteLengthInIntegerRepresentation(stepLengthValueSetting.get(), tripletSetting.get())
+    }
+
+    private fun setupNoteType() {
+        tripletSetting = documentState.getEnumSetting(
+            "Note Type",
+            "Step Recorder",
+            arrayOf("Regular", "Triplet"),
+            "Regular"
+        )
+        tripletSetting.addValueObserver { updateStepLength() }
+    }
+
+    private fun setupBackward() {
+        cursorBackwardAction = documentState.getSignalSetting("Cursor Backward", "Step Recorder", "Backward")
+        cursorBackwardAction.addSignalObserver {
+            stepper.backward()
+            updateCursorSelection()
         }
-        forwardBinding = MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped") {
+        midiLearnBindings.add(MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped") {
+            stepper.backward()
+            updateCursorSelection()
+        })
+    }
+
+    private fun setupForward() {
+        cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Step Recorder", "Forward")
+
+        cursorForwardAction.addSignalObserver {
             stepper.forward()
             updateCursorSelection()
         }
 
-        backwardBinding = MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped") {
-            stepper.backward()
+        midiLearnBindings.add(MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped") {
+            stepper.forward()
             updateCursorSelection()
-        }
-
-        noteLengthValueBinding = MidiLearnBinding(host, "Note Length Value Control", "MIDI Learn", "Not Mapped",
-            { changeNoteLengthValue(it) })
-
-        clearBinding = MidiLearnBinding(host, "Clear Button", "MIDI Learn", "Not Mapped") {
-            clearNotesAtCursor()
-        }
+        })
     }
 
-    private fun changeNoteLengthValue(value: Int) {
+    private fun setupClear() {
+        val cursorClearAction = documentState.getSignalSetting("Clear at Cursor", "Step Recorder", "Clear")
+
+        cursorClearAction.addSignalObserver {
+            clearNotesAtCursor()
+        }
+
+        midiLearnBindings.add(MidiLearnBinding(host, "Clear Button", "MIDI Learn", "Not Mapped") {
+            clearNotesAtCursor()
+        })
+    }
+
+    private fun setupNoteValue() {
+        stepLengthValueSetting = documentState.getEnumSetting(
+            "Step Length", // name
+            "Step Recorder", // category
+            arrayOf(
+                "32/1", "16/1", "8/1", "4/1", "2/1", "1/1", // Whole note and longer
+                "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" // Half note and shorter
+            ),
+            "1/16" // initial value (16th note)
+        )
+
+        stepLengthValueSetting.addValueObserver { updateStepLength() }
+
+        midiLearnBindings.add(MidiLearnBinding(
+            host, "Step Length Value Control", "MIDI Learn", "Not Mapped",
+            { changeStepLengthValue(it) }))
+    }
+
+    private fun setupEnable() {
+        enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Recorder", false)
+
+        midiLearnBindings.add(MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
+            enableSetting.set(!enableSetting.get())
+            val text = if (enableSetting.get()) "Enabled" else "Disabled"
+            host.showPopupNotification(text)
+        })
+    }
+
+    private fun changeStepLengthValue(value: Int) {
         // This binding triggers when a CC message matching the learned value control is received.
         // The MidiLearnBinding class handles mapping the CC value to the preference string.
         // The noteValueSetting's existing observer handles updating the noteLength.
@@ -244,7 +237,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
             "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
         )
         if (noteValueIndex in noteValues.indices) {
-            noteValueSetting.set(noteValues[noteValueIndex])
+            stepLengthValueSetting.set(noteValues[noteValueIndex])
             host.showPopupNotification("Note Value: ${noteValues[noteValueIndex]}")
         }
     }
@@ -332,7 +325,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
             notes.forEach { note ->
                 host.println("setStep y:${note}, x:${stepper.x}")
                 // - 0.01 prevents note lengths too close to the next and clearing deletes both
-                val nl = stepper.noteLengthInBeats - 0.01
+                val nl = stepper.noteLengthInBeats - 0.0001
                 cursorClip.setStep(0, stepper.x, note, velocity, nl)
             }
 
@@ -408,7 +401,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
         } catch (e: Exception) {
             host.showPopupNotification("Error clearing notes: ${e.message}")
-            host.println("Error details: ${e}")
+            host.println("Error details: $e")
         }
     }
 
