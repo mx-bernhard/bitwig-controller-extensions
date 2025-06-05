@@ -8,7 +8,7 @@ import java.util.UUID
 
 class StepRecorderExtensionDefinition : ControllerExtensionDefinition() {
 
-    override fun getName(): String = "Step Sequencer"
+    override fun getName(): String = "Step Recorder"
     override fun getAuthor(): String = "b3rnhard"
     override fun getVersion(): String = "0.1"
     override fun getId(): UUID = UUID.fromString("6c0e6f1b-4b7a-4c8a-8f1a-5b9a9c3d5a7e") // Generated unique UUID
