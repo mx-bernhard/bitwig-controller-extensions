@@ -79,7 +79,7 @@
             </goals>
             <configuration>
               <sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</sourceFile>
-              <destinationFile>${project.build.directory}/StepSequencer.bwextension</destinationFile>
+              <destinationFile>${project.build.directory}/StepRecorder.bwextension</destinationFile>
             </configuration>
           </execution>
         </executions>
