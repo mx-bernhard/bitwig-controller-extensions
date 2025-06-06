@@ -83,6 +83,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         setupNoteValue()
         setupClear()
         setupNoteSelectionObserver()
+        setupClearToggle()
 
         updateStepLength()
         updateCursorFromClipOrTransport()
@@ -172,17 +173,33 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         })
     }
 
+    fun <TArg> (() -> Unit).withArg(): (TArg) -> Unit {
+        return { unused: TArg -> this() }
+    }
+
     private fun setupForward() {
         cursorForwardAction = documentState.getSignalSetting("Cursor Forward", "Step Recorder", "Forward")
 
-        cursorForwardAction.addSignalObserver {
+        fun action() {
+            if (clearToggleSetting.get()) {
+                clearNotesAtCursor()
+            }
             stepper.forward()
             updateCursorSelection()
         }
 
-        midiLearnBindings.add(MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped") {
-            stepper.forward()
-            updateCursorSelection()
+        cursorForwardAction.addSignalObserver(::action)
+
+        midiLearnBindings.add(MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped",::action.withArg()))
+    }
+
+    private lateinit var clearToggleSetting: SettableBooleanValue;
+
+    private fun setupClearToggle() {
+        clearToggleSetting = documentState.getBooleanSetting("Clear toggle on fw/bw", "Step Recorder", true)
+
+        midiLearnBindings.add(MidiLearnBinding(host, "Clear Toggle on fw Button", "MIDI Learn", "Not Mapped") {
+            clearToggleSetting.set(!clearToggleSetting.get())
         })
     }
 
