@@ -148,7 +148,13 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         "Toggle triplet",
         "MIDI Learn",
         "Not Mapped",
-        this::updateStepLength.withArg()
+        {
+          val current = tripletSetting.get()
+          val newValue = if (current === "Regular") "Triplet" else "Regular"
+          tripletSetting.set(newValue)
+          updateStepLength()
+
+        }
       )
     )
   }
@@ -176,9 +182,11 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       if (clearToggleSetting.get()) {
         clearNotesAtCursor()
       }
-      stepper.backward()
-      updateCursorSelection(stepper.x)
-      stepper.forward()
+      if (stepper.cursorPosition != 0){
+        stepper.backward()
+        updateCursorSelection(stepper.x)
+        stepper.forward()
+      }
     }
 
     cursorBackwardAction.addSignalObserver(action)
@@ -310,21 +318,16 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   private fun processPendingNotes() {
     if (pendingNotes.isNotEmpty()) {
-      // Check if all notes were played close together (chord) or separately
       val noteList = pendingNotes.sorted()
 
       if (noteList.size == 1) {
-        // Single note
-        addNotesToCurrentClip(noteList, 127) // Use default velocity
+        addNotesToCurrentClip(noteList, 127)
       } else {
-        // Multiple notes - check if they should be a chord
         val noteTimeSpan = lastNoteOnTime - firstNoteTime
 
         if (noteTimeSpan <= chordThresholdMs) {
-          // Notes were pressed close together - place as chord
           addNotesToCurrentClip(noteList, 127)
         } else {
-          // Notes were pressed far apart - place sequentially
           noteList.forEach { note ->
             addNotesToCurrentClip(listOf(note), 127)
           }
@@ -336,7 +339,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   }
 
   private fun addNotesToCurrentClip(notes: List<Int>, velocity: Int) {
-    // Check if we have a valid clip
     if (!cursorClip.exists().get()) {
       host.showPopupNotification("No active clip found. Create or select a clip and open piano roll.")
       return
