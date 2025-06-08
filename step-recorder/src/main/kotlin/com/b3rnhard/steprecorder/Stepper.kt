@@ -19,13 +19,17 @@ class Stepper(val host: ControllerHost) {
   fun initialize(clipLauncherCursorClip: Clip) {
     clipLauncherCursorClip.setStepSize(stepSize)
   }
-  var cursorPosition: Int = 0
 
-  val cursorSteps
-    get() = this.minimumStepsAmount * integerBasedFactor.toInt()
+  var cursorStep: Int = 0
+
+  val clipGridWidth
+    get() = this.minimumStepsAmount * integerBasedFactor
 
   // Default to 16th note
   private var integerBasedNoteLength: Int = (0.25 * integerBasedFactor).roundToInt()
+
+  val rangeOfXForCurrentStep: IntRange
+    get() { return cursorStep..(cursorStep + integerBasedNoteLength - 1)}
 
   private fun integerBasedToBeats(integerValue: Int): Double {
     return integerValue.toDouble() / integerBasedFactor.toDouble();
@@ -39,22 +43,22 @@ class Stepper(val host: ControllerHost) {
     get() = integerBasedToBeats(integerBasedNoteLength)
 
   fun forward() {
-    cursorPosition = (cursorPosition + integerBasedNoteLength).coerceAtLeast(0)
-    host.println("Cursor moved forward to: ${integerBasedToBeats(cursorPosition)} beats")
+    cursorStep = (cursorStep + integerBasedNoteLength).coerceAtLeast(0)
+    host.println("Cursor moved forward to: ${integerBasedToBeats(cursorStep)} beats")
   }
 
   fun backward() {
-    cursorPosition = (cursorPosition - integerBasedNoteLength).coerceAtLeast(0)
-    host.println("Cursor moved backward to: ${integerBasedToBeats(cursorPosition)} beats")
+    cursorStep = (cursorStep - integerBasedNoteLength).coerceAtLeast(0)
+    host.println("Cursor moved backward to: ${integerBasedToBeats(cursorStep)} beats")
   }
 
   val x: Int
     get() {
-      return cursorPosition
+      return cursorStep
     }
 
   fun resetXFromBeats(beats: Double, clip: Clip) {
-    cursorPosition = 0
+    cursorStep = 0
     clip.scrollToStep(beatsToIntegerBased(beats))
   }
 
@@ -83,7 +87,7 @@ class Stepper(val host: ControllerHost) {
     )
     // Apply triplet timing if selected (2/3 of regular note length)
     if (noteType != "Triplet") {
-      integerBasedNoteLength = (baseLength).toInt()
+      integerBasedNoteLength = (baseLength)
     } else {
       integerBasedNoteLength = (baseLength * 2.0 / 3.0).toInt()
     }

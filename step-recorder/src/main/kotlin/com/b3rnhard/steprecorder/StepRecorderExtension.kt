@@ -47,12 +47,12 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     val trackBank = host.createTrackBank(100, 0, 100, false)
     trackBank.setShouldShowClipLauncherFeedback(true)
     stepper = Stepper(host)
-    clipLauncherCursorClip = host.createLauncherCursorClip(stepper.cursorSteps, 128)
+    clipLauncherCursorClip = host.createLauncherCursorClip(stepper.clipGridWidth, 128)
     clipLauncherCursorClip.exists().markInterested()
     stepper.initialize(clipLauncherCursorClip)
 
 
-    arrangerCursorClip = host.createArrangerCursorClip(stepper.cursorSteps, 128)
+    arrangerCursorClip = host.createArrangerCursorClip(stepper.clipGridWidth, 128)
     arrangerCursorClip.exists().markInterested()
 //    stepper.setXFromBeats(1.0)
 
@@ -165,7 +165,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
     val action = {
       if (clearToggleSetting.get()) {
-        clearNotesAtCursor()
+        clearNotesAtCurrentStepRange()
       }
       updateCursorSelection(stepper.x)
       stepper.forward()
@@ -181,9 +181,9 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     val action = {
       stepper.backward()
       if (clearToggleSetting.get()) {
-        clearNotesAtCursor()
+        clearNotesAtCurrentStepRange()
       }
-      if (stepper.cursorPosition != 0) {
+      if (stepper.cursorStep != 0) {
         stepper.backward()
         updateCursorSelection(stepper.x)
         stepper.forward()
@@ -219,7 +219,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     val cursorClearSignal = documentState.getSignalSetting("Clear at Cursor", "Step Recorder", "Clear")
 
 
-    cursorClearSignal.addSignalObserver(this::clearNotesAtCursor)
+    cursorClearSignal.addSignalObserver(this::clearNotesAtCurrentStepRange)
 
     midiLearnBindings.add(
       MidiLearnBinding(
@@ -227,7 +227,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         "Clear Button",
         "MIDI Learn",
         "Not Mapped",
-        this::clearNotesAtCursor.withArg()
+        this::clearNotesAtCurrentStepRange.withArg()
       )
     )
   }
@@ -368,9 +368,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
 
     try {
-      // Clear all existing notes at this step position
-      host.println("Clear at ${stepper.x}")
-      clipLauncherCursorClip.clearStepsAtX(0, stepper.x)
+      clearNotesAtCurrentStepRange()
 
       // Add all notes at the same position (chord)
       notes.forEach { note ->
@@ -432,19 +430,11 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     return (clampedCC * 11 / 127).coerceIn(0, 11)
   }
 
-  /**
-   * Clear all notes at the current cursor position
-   * Converts note positions into rests/gaps
-   */
-  private fun clearNotesAtCursor() {
-    try {
-      clipLauncherCursorClip.clearStepsAtX(0, stepper.x)
-
-      host.println("Cleared notes at beat ${stepper.x}, step ${stepper.cursorPosition}")
-
-    } catch (e: Exception) {
-      host.showPopupNotification("Error clearing notes: ${e.message}")
-      host.println("Error details: $e")
+  private fun clearNotesAtCurrentStepRange() {
+    val range = stepper.rangeOfXForCurrentStep
+    host.println("Clear step range ${range.first}..${range.last}")
+    range.forEach {
+      clipLauncherCursorClip.clearStepsAtX(0, it)
     }
   }
 
