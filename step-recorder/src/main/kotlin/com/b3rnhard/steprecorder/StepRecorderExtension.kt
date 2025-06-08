@@ -11,8 +11,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   private lateinit var application: Application
   private lateinit var transport: Transport
   private lateinit var cursorTrack: CursorTrack
-  private lateinit var cursorClip: Clip
-  private lateinit var arrangerClip: Clip
+  private lateinit var clipLauncherCursorClip: Clip
+  private lateinit var arrangerCursorClip: Clip
   private lateinit var midiIn: MidiIn
   private lateinit var noteInput: NoteInput
   private lateinit var stepLengthValueSetting: SettableEnumValue
@@ -46,16 +46,17 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     cursorTrack = host.createCursorTrack("steprecorder:CursorTrack", "Cursor Track", 0, 100, true)
     val trackBank = host.createTrackBank(100, 0, 100, false)
     trackBank.setShouldShowClipLauncherFeedback(true)
+    stepper = Stepper(host)
+    clipLauncherCursorClip = host.createLauncherCursorClip(stepper.cursorSteps, 128)
+    clipLauncherCursorClip.exists().markInterested()
+    stepper.initialize(clipLauncherCursorClip)
 
-    stepper = Stepper(host, { this.cursorClip })
-    cursorClip = host.createLauncherCursorClip(stepper.cursorSteps, 128)
-    cursorClip.exists().markInterested()
 
-    arrangerClip = host.createArrangerCursorClip(stepper.cursorSteps, 128)
-    arrangerClip.exists().markInterested()
-    stepper.setXFromBeats(1.0)
+    arrangerCursorClip = host.createArrangerCursorClip(stepper.cursorSteps, 128)
+    arrangerCursorClip.exists().markInterested()
+//    stepper.setXFromBeats(1.0)
 
-    cursorClip.playStart.markInterested()
+    clipLauncherCursorClip.playStart.markInterested()
     transport.playPosition().markInterested()
     transport.isPlaying().markInterested()
 
@@ -69,7 +70,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     setupNoteSelectionObserver()
 
     updateStepLength()
-    updateCursorFromClipOrTransport()
+    resetCursorClipToPlayStart()
 
     // Get MIDI input port and set up input/callback (only if a MIDI port is assigned)
     try {
@@ -182,7 +183,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       if (clearToggleSetting.get()) {
         clearNotesAtCursor()
       }
-      if (stepper.cursorPosition != 0){
+      if (stepper.cursorPosition != 0) {
         stepper.backward()
         updateCursorSelection(stepper.x)
         stepper.forward()
@@ -253,6 +254,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     )
   }
 
+  private var needsResetToPlayStart = true
+
   private fun setupEnable(trackBank: TrackBank) {
     val bankUtil = BankUtil(trackBank)
 
@@ -260,16 +263,26 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       bank.addIsSelectedObserver({ slotIndex: Int, isSelected: Boolean ->
         if (enableSetting.get()) {
           enableSetting.set(false)
+          needsResetToPlayStart = true
           host.println("Step recorder is now disabled")
         }
       })
     }
 
     bankUtil.forEachClipLauncherSlot { slot, trackIndex, slotIndex ->
-      slot.isSelected.addValueObserver { isSelected -> enableSetting.set(false) }
+      slot.isSelected.addValueObserver { isSelected ->
+        enableSetting.set(false)
+        needsResetToPlayStart = true
+      }
     }
 
     enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Recorder", false)
+    enableSetting.addValueObserver {
+      if (it && needsResetToPlayStart) {
+        needsResetToPlayStart = false
+        resetCursorClipToPlayStart()
+      }
+    }
 
     midiLearnBindings.add(MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
       val newEnabled = !enableSetting.get()
@@ -288,22 +301,22 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   }
 
   private fun setupNoteSelectionObserver() {
-    cursorClip.addNoteStepObserver { isNoteStepOn ->
-      if (!isUpdatingSelection && cursorClip.exists().get()) {
+    clipLauncherCursorClip.addNoteStepObserver { isNoteStepOn ->
+      if (!isUpdatingSelection && clipLauncherCursorClip.exists().get()) {
         updateCursorFromSelectedNotes()
       }
     }
   }
 
   private fun updateCursorSelection(beatTime: Int) {
-    if (!cursorClip.exists().get()) return
+    if (!clipLauncherCursorClip.exists().get()) return
 
     isUpdatingSelection = true
     try {
-      cursorClip.selectStepContents(0, 0, 0, true)
+      clipLauncherCursorClip.selectStepContents(0, 0, 0, true)
       host.println("Select step $beatTime")
       for (key in 0..127) {
-        cursorClip.selectStepContents(0, beatTime, key, false)
+        clipLauncherCursorClip.selectStepContents(0, beatTime, key, false)
       }
     } catch (e: Exception) {
       host.println(e.stackTraceToString())
@@ -339,7 +352,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   }
 
   private fun addNotesToCurrentClip(notes: List<Int>, velocity: Int) {
-    if (!cursorClip.exists().get()) {
+    if (!clipLauncherCursorClip.exists().get()) {
       host.showPopupNotification("No active clip found. Create or select a clip and open piano roll.")
       return
     }
@@ -357,14 +370,14 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     try {
       // Clear all existing notes at this step position
       host.println("Clear at ${stepper.x}")
-      cursorClip.clearStepsAtX(0, stepper.x)
+      clipLauncherCursorClip.clearStepsAtX(0, stepper.x)
 
       // Add all notes at the same position (chord)
       notes.forEach { note ->
         host.println("setStep y:${note}, x:${stepper.x}")
         // - 0.0001 prevents note lengths too close to the next and clearing deletes both
-        val nl = stepper.noteLengthInBeats - 0.0001
-        cursorClip.setStep(0, stepper.x, note, velocity, nl)
+        val nl = stepper.stepLengthInBeats - 0.0001
+        clipLauncherCursorClip.setStep(0, stepper.x, note, velocity, nl)
       }
 
       val noteNames = notes.joinToString(", ") { getNoteNameFromMidi(it) }
@@ -395,12 +408,14 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     // Nothing specific to flush
   }
 
-  private fun updateCursorFromClipOrTransport() {
-    stepper.setXFromBeats(
-      if (cursorClip.exists().get())
-        cursorClip.playStart.get()
-      else
-        transport.playPosition().get()
+  private fun resetCursorClipToPlayStart() {
+    val playStartValue = clipLauncherCursorClip.playStart.get()
+    val newStep = stepper.resetXFromBeats(playStartValue, clipLauncherCursorClip)
+
+    host.println(
+      "Reset step recorder cursor to play start ${
+        host.defaultBeatTimeFormatter().formatBeatTime(playStartValue, true, 4, 4, 100)
+      }"
     )
   }
 
@@ -423,7 +438,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
    */
   private fun clearNotesAtCursor() {
     try {
-      cursorClip.clearStepsAtX(0, stepper.x)
+      clipLauncherCursorClip.clearStepsAtX(0, stepper.x)
 
       host.println("Cleared notes at beat ${stepper.x}, step ${stepper.cursorPosition}")
 
