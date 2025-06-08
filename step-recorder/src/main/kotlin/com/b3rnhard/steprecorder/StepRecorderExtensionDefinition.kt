@@ -4,14 +4,14 @@ import com.bitwig.extension.api.PlatformType
 import com.bitwig.extension.controller.AutoDetectionMidiPortNamesList
 import com.bitwig.extension.controller.ControllerExtensionDefinition
 import com.bitwig.extension.controller.api.ControllerHost
-import java.util.UUID
+import java.util.*
 
 class StepRecorderExtensionDefinition : ControllerExtensionDefinition() {
 
     override fun getName(): String = "Step Recorder"
     override fun getAuthor(): String = "b3rnhard"
-    override fun getVersion(): String = "0.1"
-    override fun getId(): UUID = UUID.fromString("6c0e6f1b-4b7a-4c8a-8f1a-5b9a9c3d5a7e") // Generated unique UUID
+    override fun getVersion(): String = version
+    override fun getId(): UUID = DRIVER_ID
     override fun getHardwareVendor(): String = "Generic"
     override fun getHardwareModel(): String = "Step Recorder"
     override fun getRequiredAPIVersion(): Int = 22
@@ -23,10 +23,25 @@ class StepRecorderExtensionDefinition : ControllerExtensionDefinition() {
         list: AutoDetectionMidiPortNamesList,
         platformType: PlatformType
     ) {
-        // Leave empty - users will manually assign the virtual MIDI port
+        list.add(arrayOf("Step Recorder"), arrayOfNulls(0))
     }
 
     override fun createInstance(host: ControllerHost): StepRecorderExtension {
         return StepRecorderExtension(this, host)
+    }
+
+    companion object {
+        private val DRIVER_ID: UUID = UUID.fromString("6c0e6f1b-4b7a-4c8a-8f1a-5b9a9c3d5a7e")
+        private val version: String by lazy {
+            try {
+                val props = Properties()
+                StepRecorderExtensionDefinition::class.java.getResourceAsStream("/version.properties").use {
+                    props.load(it)
+                }
+                props.getProperty("version", "0.0.0-dev")
+            } catch (e: Exception) {
+                "0.0.0-error"
+            }
+        }
     }
 }
