@@ -21,7 +21,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   private lateinit var cursorForwardAction: Signal
   private lateinit var cursorBackwardAction: Signal
 
-  private lateinit var enableSetting: SettableBooleanValue
+  private lateinit var enableSetting: ISettableBooleanValue
+  private lateinit var clearNotesOnInputSetting: ISettableBooleanValue
   private lateinit var preferences: Preferences
 
   private val midiLearnBindings = mutableListOf<MidiLearnBinding>()
@@ -68,6 +69,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     setupClear()
     setupClearToggle()
     setupNoteSelectionObserver()
+    setClearOldNotesWhenRecording()
 
     updateStepLength()
     resetCursorClipToPlayStart()
@@ -194,10 +196,10 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     midiLearnBindings.add(MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped", action.withArg()))
   }
 
-  private lateinit var clearToggleSetting: SettableBooleanValue
+  private lateinit var clearToggleSetting: ISettableBooleanValue
 
   private fun setupClearToggle() {
-    clearToggleSetting = documentState.getBooleanSetting("Clear toggle on forward/backward", "Step Recorder", true)
+    clearToggleSetting = documentState.getEnumBasedBooleanSetting("Clear toggle on forward/backward", "Modes", true)
 
     val settingsAction = { value: Boolean ->
       host.showPopupNotification("Clear on forward/backward is now ${if (value) "enabled" else "disabled"}")
@@ -213,6 +215,26 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
         { clearToggleSetting.set(!clearToggleSetting.get()) }
       )
     )
+  }
+
+  private fun setClearOldNotesWhenRecording() {
+    clearNotesOnInputSetting = documentState.getEnumBasedBooleanSetting("Clear toggle on input", "Modes", true)
+
+    val settingsAction = { value: Boolean ->
+      host.showPopupNotification("Clear old notes on note input is now ${if (value) "enabled" else "disabled"}")
+    }
+
+    clearNotesOnInputSetting.addValueObserver(settingsAction)
+    midiLearnBindings.add(
+      MidiLearnBinding(
+        host,
+        "Clear old notes on note input Toggle",
+        "MIDI Learn",
+        "Not Mapped",
+        { clearNotesOnInputSetting.set(!clearNotesOnInputSetting.get()) }
+      )
+    )
+
   }
 
   private fun setupClear() {
@@ -276,7 +298,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       }
     }
 
-    enableSetting = documentState.getBooleanSetting("Enable step recording", "Step Recorder", false)
+    enableSetting = documentState.getEnumBasedBooleanSetting("Enable step recording", "Step Recorder", false)
     enableSetting.addValueObserver {
       if (it && needsResetToPlayStart) {
         needsResetToPlayStart = false
@@ -368,7 +390,9 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
 
     try {
-      clearNotesAtCurrentStepRange()
+      if (clearNotesOnInputSetting.get()) {
+        clearNotesAtCurrentStepRange()
+      }
 
       // Add all notes at the same position (chord)
       notes.forEach { note ->
