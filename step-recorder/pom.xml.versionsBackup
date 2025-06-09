@@ -5,12 +5,12 @@
     <parent>
         <groupId>com.b3rnhard</groupId>
         <artifactId>bitwig-controller-extensions-parent</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.0</version>
     </parent>
 
-    <artifactId>midi-splitter</artifactId>
+    <artifactId>step-recorder</artifactId>
     <packaging>jar</packaging>
-    <name>MIDI Splitter</name>
+    <name>Step Recorder</name>
 
     <properties>
         <kotlin.version>2.1.21</kotlin.version>
@@ -113,10 +113,10 @@
                             <createDependencyReducedPom>true</createDependencyReducedPom>
                             <manifest>
                                 <addClasspath>true</addClasspath>
-                                <mainClass>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</mainClass>
+                                <mainClass>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition</mainClass>
                             </manifest>
                             <manifestEntries>
-                                <Extension-Class>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition
+                                <Extension-Class>com.b3rnhard.steprecorder.StepRecorderExtensionDefinition
                                 </Extension-Class>
                             </manifestEntries>
                         </configuration>
@@ -145,7 +145,7 @@
                         <configuration>
                             <sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar
                             </sourceFile>
-                            <destinationFile>${project.build.directory}/MidiSplitter.bwextension</destinationFile>
+                            <destinationFile>${project.build.directory}/StepRecorder.bwextension</destinationFile>
                         </configuration>
                     </execution>
                 </executions>
@@ -187,10 +187,10 @@
                                 </fail>
                                 <echo message="Target Bitwig Scripts Directory is set to: ${target.dir}"/>
                                 <mkdir dir="${target.dir}"/>
-                                <copy file="${project.build.directory}/MidiSplitter.bwextension"
-                                      tofile="${target.dir}/MidiSplitter.bwextension"
+                                <copy file="${project.build.directory}/StepRecorder.bwextension"
+                                      tofile="${target.dir}/StepRecorder.bwextension"
                                       overwrite="true"/>
-                                <echo message="Copied MidiSplitter.bwextension to ${target.dir}"/>
+                                <echo message="Copied StepRecorder.bwextension to ${target.dir}"/>
                             </target>
                         </configuration>
                     </execution>

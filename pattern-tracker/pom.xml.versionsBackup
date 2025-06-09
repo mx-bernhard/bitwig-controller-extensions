@@ -5,12 +5,12 @@
     <parent>
         <groupId>com.b3rnhard</groupId>
         <artifactId>bitwig-controller-extensions-parent</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.0</version>
     </parent>
 
-    <artifactId>midi-splitter</artifactId>
+    <artifactId>pattern-tracker</artifactId>
     <packaging>jar</packaging>
-    <name>MIDI Splitter</name>
+    <name>pattern-tracker</name>
 
     <properties>
         <kotlin.version>2.1.21</kotlin.version>
@@ -111,14 +111,6 @@
                             <shadedArtifactAttached>true</shadedArtifactAttached>
                             <shadedClassifierName>shaded</shadedClassifierName>
                             <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <manifest>
-                                <addClasspath>true</addClasspath>
-                                <mainClass>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition</mainClass>
-                            </manifest>
-                            <manifestEntries>
-                                <Extension-Class>com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition
-                                </Extension-Class>
-                            </manifestEntries>
                         </configuration>
                     </execution>
                 </executions>
@@ -145,7 +137,7 @@
                         <configuration>
                             <sourceFile>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar
                             </sourceFile>
-                            <destinationFile>${project.build.directory}/MidiSplitter.bwextension</destinationFile>
+                            <destinationFile>${project.build.directory}/PatternTracker.bwextension</destinationFile>
                         </configuration>
                     </execution>
                 </executions>
@@ -187,10 +179,10 @@
                                 </fail>
                                 <echo message="Target Bitwig Scripts Directory is set to: ${target.dir}"/>
                                 <mkdir dir="${target.dir}"/>
-                                <copy file="${project.build.directory}/MidiSplitter.bwextension"
-                                      tofile="${target.dir}/MidiSplitter.bwextension"
+                                <copy file="${project.build.directory}/PatternTracker.bwextension"
+                                      tofile="${target.dir}/PatternTracker.bwextension"
                                       overwrite="true"/>
-                                <echo message="Copied MidiSplitter.bwextension to ${target.dir}"/>
+                                <echo message="Copied PatternTracker.bwextension to ${target.dir}"/>
                             </target>
                         </configuration>
                     </execution>
@@ -198,4 +190,4 @@
             </plugin>
         </plugins>
     </build>
-</project> 
+</project>
