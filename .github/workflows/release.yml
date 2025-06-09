@@ -1,4 +1,4 @@
-name: Create Release
+name: Create and Publish Release
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # fetch all history so we can push back to the repo
+          # We need the full history to properly create commits and tags
           fetch-depth: 0
 
       - name: Set up JDK 21
@@ -25,6 +25,7 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
+          cache: maven
 
       - name: Configure Git
         run: |
@@ -34,13 +35,29 @@ jobs:
       - name: Update version in pom.xml files
         run: mvn versions:set -DnewVersion=${{ github.event.inputs.version }} -DprocessAllModules=true
 
-      - name: Commit and push changes
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Commit version bump
         run: |
           git add .
           git commit -m "chore(release): prepare for release ${{ github.event.inputs.version }}"
-          git push
 
-      - name: Create and push tag
+      - name: Create and Push Tag
         run: |
-          git tag -a "v${{ github.event.inputs.version }}" -m "Version ${{ github.event.inputs.version }}"
+          git tag "v${{ github.event.inputs.version }}"
           git push origin "v${{ github.event.inputs.version }}"
+
+      - name: Push version bump commit
+        run: git push
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.event.inputs.version }}"
+          name: "Release ${{ github.event.inputs.version }}"
+          fail_on_unmatched_files: true
+          files: |
+            pattern-tracker/target/PatternTracker.bwextension
+            midi-splitter/target/MidiSplitter.bwextension
+            step-recorder/target/StepRecorder.bwextension

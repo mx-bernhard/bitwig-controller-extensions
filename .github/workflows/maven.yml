@@ -12,12 +12,8 @@ on:
   push:
     branches:
       - "main"
-    tags:
-      - "v*"
   pull_request:
     branches: ["main"]
-  release:
-    types: [published]
 
 permissions:
   contents: write
@@ -44,22 +40,3 @@ jobs:
             pattern-tracker/target/PatternTracker.bwextension
             midi-splitter/target/MidiSplitter.bwextension
             step-recorder/target/StepRecorder.bwextension
-
-  release:
-    needs: build
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: extensions
-
-      - name: Attach Assets to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            pattern-tracker/target/PatternTracker.bwextension
-            midi-splitter/target/MidiSplitter.bwextension
-            step-recorder/target/StepRecorder.bwextension
-          fail_on_unmatched_files: true
