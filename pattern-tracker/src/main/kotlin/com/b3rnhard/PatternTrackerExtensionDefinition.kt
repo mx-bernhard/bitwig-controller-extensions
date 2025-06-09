@@ -10,8 +10,10 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
 
     override fun getName(): String = "Pattern Tracker"
     override fun getAuthor(): String = "b3rnhard"
-    override fun getVersion(): String = SCRIPT_VERSION
-    override fun getId(): UUID = DRIVER_ID
+    override fun getVersion(): String {
+        return versionFromProperties
+    }
+    override fun getId(): UUID = UUID.fromString("b243d28b-6d55-4184-9caa-55ce3cf5c061")
     override fun getHardwareVendor(): String = "Generic"
     override fun getHardwareModel(): String = "Tracker Pattern Trigger"
     override fun getRequiredAPIVersion(): Int = 22
@@ -30,7 +32,7 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
     }
 
     companion object {
-        val SCRIPT_VERSION: String by lazy {
+        val versionFromProperties: String by lazy {
             try {
                 val props = Properties()
                 PatternTrackerExtensionDefinition::class.java.getResourceAsStream("/version.properties").use {
@@ -41,10 +43,5 @@ class PatternTrackerExtensionDefinition : ControllerExtensionDefinition() {
                 "0.0.0-error"
             }
         }
-        const val DEVICES_GROUP_NAME = "Devices"
-        const val FIRE_PATTERN_GROUP_NAME = "Patterns"
-        const val MAX_TRACKS = 5
-        const val MAX_SLOTS = 5
-        private val DRIVER_ID: UUID = UUID.fromString("b243d28b-6d55-4184-9caa-55ce3cf5c061")
     }
-} 
+}

@@ -1,17 +1,12 @@
 package com.b3rnhard
 
-import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.DEVICES_GROUP_NAME
-import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.FIRE_PATTERN_GROUP_NAME
-import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.SCRIPT_VERSION
+import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.versionFromProperties
 
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.api.ClipLauncherSlot
 import com.bitwig.extension.controller.api.ControllerHost
 import com.bitwig.extension.controller.api.SettableRangedValue
 import com.bitwig.extension.controller.api.Track
-import com.bitwig.extension.controller.api.DocumentState
-import com.bitwig.extension.controller.api.SceneBank
-import com.bitwig.extension.controller.api.ClipLauncherSlotBank
 
 // --- Helper Data Classes (Moved outside the main class) ---
 data class DeviceSlotInfo(val slot: ClipLauncherSlot, val track: Track)
@@ -27,9 +22,10 @@ typealias TrackSlotMap<T> = MutableMap<Int, MutableMap<Int, T>>
 // Map: parentTrackIndex -> childTrackIndex -> slotIndex -> Value
 typealias TrackSlotItemMap<T> = MutableMap<Int, MutableMap<Int, MutableMap<Int, T>>>
 
-
 class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, host: ControllerHost) :
   ControllerExtension(definition, host) {
+  private val devicesGroupName = "Devices"
+  private val firePatternGroupName = "Patterns"
 
   // --- State ---
   private val deviceClipMap: MutableMap<String, DeviceSlotInfo> = mutableMapOf()
@@ -166,11 +162,11 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         val trackName = track.name().get()
         val isGroup = track.isGroup().get()
         host.println("Remap: Processing stored top-level track $trackIndex: Name=\"$trackName\", IsGroup=$isGroup")
-        if (isGroup && trackName == DEVICES_GROUP_NAME) {
+        if (isGroup && trackName == devicesGroupName) {
           deviceGroupFound = true
           host.println("  -> Found DEVICES group (Index $trackIndex). Processing stored children.")
           processGroupChildren(
-            DEVICES_GROUP_NAME,
+            devicesGroupName,
             trackIndex,
             childTracks[trackIndex],
             childSlots[trackIndex]
@@ -198,13 +194,13 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
               deviceClipMap[slotName] = DeviceSlotInfo(slot, childTrack)
             }
           }
-        } else if (isGroup && trackName == FIRE_PATTERN_GROUP_NAME) {
+        } else if (isGroup && trackName == firePatternGroupName) {
           patternGroupFound = true
           val parentTrackIndex = trackIndex
           host.println("  -> Found PATTERNS group (Index $parentTrackIndex). Processing stored children.")
           val parentStateMap = fireSlotsState.getOrPut(parentTrackIndex) { mutableMapOf() }
           processGroupChildren(
-            FIRE_PATTERN_GROUP_NAME,
+            firePatternGroupName,
             parentTrackIndex,
             childTracks[parentTrackIndex],
             childSlots[parentTrackIndex]
@@ -234,10 +230,10 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
       e.printStackTrace()
     }
     if (!deviceGroupFound) {
-      host.println("WARN: '$DEVICES_GROUP_NAME' group track not found during remap.")
+      host.println("WARN: '$devicesGroupName' group track not found during remap.")
     }
     if (!patternGroupFound) {
-      host.println("WARN: '$FIRE_PATTERN_GROUP_NAME' group track not found during remap.")
+      host.println("WARN: '$firePatternGroupName' group track not found during remap.")
     }
     host.println("--- Manual Clip Remapping Finished. Device clips mapped: ${deviceClipMap.size} ---")
     host.println("--- Mapped Device Clips ---")
@@ -314,26 +310,24 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     // --- New Setting: Keep Devices Playing on Pattern Stop (Using EnumSetting) ---
     val documentState = host.documentState
     val keepDevicesPlayingEnumSetting = documentState.getEnumSetting(
-        "Keep Devices Playing on Pattern Stop", // Name
-        "Mapping", // Category
-        arrayOf("DISABLED", "ENABLED"), // Enum values
-        "DISABLED" // Default value
+      "Keep Devices Playing on Pattern Stop", // Name
+      "Mapping", // Category
+      arrayOf("DISABLED", "ENABLED"), // Enum values
+      "DISABLED" // Default value
     )
 
     keepDevicesPlayingEnumSetting.addValueObserver { value ->
-        keepDevicesPlayingOnPatternStop = (value == "ENABLED")
-        host.showPopupNotification("Keep Devices Playing: $value") // Show the actual enum value
-        host.println("Setting 'Keep Devices Playing on Pattern Stop' changed to: $value")
+      keepDevicesPlayingOnPatternStop = (value == "ENABLED")
+      host.showPopupNotification("Keep Devices Playing: $value") // Show the actual enum value
+      host.println("Setting 'Keep Devices Playing on Pattern Stop' changed to: $value")
     }
     // Initialize with the document state value
     keepDevicesPlayingOnPatternStop = (keepDevicesPlayingEnumSetting.get() == "ENABLED")
-    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${if(keepDevicesPlayingOnPatternStop) "ENABLED" else "DISABLED"}")
+    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${if (keepDevicesPlayingOnPatternStop) "ENABLED" else "DISABLED"}")
   }
 
   override fun init() {
-    host.println("=== Pattern Tracker Extension Starting ===")
-    host.println("Version: $SCRIPT_VERSION")
-    host.println("Initializing with host: ${host.javaClass.name}")
+    host.println("=== Pattern Tracker Extension v$versionFromProperties Starting ===")
 
     try {
       // --- Setup Transport Observer ---
@@ -431,7 +425,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 // --- Add slot observers ---
                 name().addValueObserver { name ->
                   if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == DEVICES_GROUP_NAME && mainTrack.isGroup().get() && !childTrack.isGroup()
+                  if (mainTrack.name().get() == devicesGroupName && mainTrack.isGroup().get() && !childTrack.isGroup()
                       .get()
                   ) {
                     setupDeviceSlotMappingLogic(name, hasContent().get(), slot, childTrack, slotIndex)
@@ -439,7 +433,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 }
                 hasContent().addValueObserver { hasContent ->
                   if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == DEVICES_GROUP_NAME && mainTrack.isGroup().get() && !childTrack.isGroup()
+                  if (mainTrack.name().get() == devicesGroupName && mainTrack.isGroup().get() && !childTrack.isGroup()
                       .get()
                   ) {
                     setupDeviceSlotMappingLogic(name().get(), hasContent, slot, childTrack, slotIndex)
@@ -456,7 +450,8 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 }
                 name().addValueObserver { name ->
                   if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == FIRE_PATTERN_GROUP_NAME && mainTrack.isGroup().get() && !childTrack.isGroup()
+                  if (mainTrack.name().get() == firePatternGroupName && mainTrack.isGroup()
+                      .get() && !childTrack.isGroup()
                       .get()
                   ) {
                     val patternSlotState = setupPatternObserverState()
@@ -465,7 +460,8 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 }
                 isPlaying().addValueObserver { isPlaying ->
                   if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == FIRE_PATTERN_GROUP_NAME && mainTrack.isGroup().get() && !childTrack.isGroup()
+                  if (mainTrack.name().get() == firePatternGroupName && mainTrack.isGroup()
+                      .get() && !childTrack.isGroup()
                       .get()
                   ) {
                     val patternSlotState = setupPatternObserverState()
@@ -564,21 +560,21 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
   // Helper to handle stop command logic
   private fun handleStopCommand(slotState: FireSlotState, name: String): Boolean {
     if (!name.startsWith(stopKeyword)) {
-        return false // Not a stop command
+      return false // Not a stop command
     }
 
     val trackName = name.substring(stopKeyword.length).trim()
     if (trackName.isNotEmpty()) {
-        host.println("   -> Stop command detected for track \"$trackName\".")
-        val deviceInfo = deviceClipMap.values.find { info -> info.track.name().get() == trackName }
-        if (deviceInfo != null) {
-            host.println("   -> Found device track. Stopping playback.")
-            deviceInfo.track.stop()
-        } else {
-            host.println("   -> Could not find device track named \"$trackName\".")
-        }
+      host.println("   -> Stop command detected for track \"$trackName\".")
+      val deviceInfo = deviceClipMap.values.find { info -> info.track.name().get() == trackName }
+      if (deviceInfo != null) {
+        host.println("   -> Found device track. Stopping playback.")
+        deviceInfo.track.stop()
+      } else {
+        host.println("   -> Could not find device track named \"$trackName\".")
+      }
     } else {
-        host.println("   -> Invalid stop command format. Expected \"$stopKeyword<TrackName>\".")
+      host.println("   -> Invalid stop command format. Expected \"$stopKeyword<TrackName>\".")
     }
     slotState.deviceSlot = null // Clear associated device slot regardless of success
     return true // Stop command was handled (or attempted)
@@ -586,18 +582,18 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
   // Helper to handle launch command logic
   private fun handleLaunchCommand(slotState: FireSlotState, name: String) {
-      if (!isTransportPlaying) {
-          host.println("   -> Transport not playing. Launch postponed for device clip \"$name\".")
-          return // Don't launch if transport is stopped
-      }
-      val isDeviceMapped = deviceClipMap.containsKey(name)
-      host.println("   -> Play event check on name change. (Transport Playing: $isTransportPlaying, Name Known: true, Device Mapped: $isDeviceMapped)")
-      if (isDeviceMapped) {
-          host.println("   -> Preconditions met. Launching device clip \"$name\".")
-          slotState.deviceSlot = findAndLaunchDeviceClip(name)
-      } else {
-          host.println("   -> Launch postponed: Device clip \"$name\" not yet mapped.")
-      }
+    if (!isTransportPlaying) {
+      host.println("   -> Transport not playing. Launch postponed for device clip \"$name\".")
+      return // Don't launch if transport is stopped
+    }
+    val isDeviceMapped = deviceClipMap.containsKey(name)
+    host.println("   -> Play event check on name change. (Transport Playing: $isTransportPlaying, Name Known: true, Device Mapped: $isDeviceMapped)")
+    if (isDeviceMapped) {
+      host.println("   -> Preconditions met. Launching device clip \"$name\".")
+      slotState.deviceSlot = findAndLaunchDeviceClip(name)
+    } else {
+      host.println("   -> Launch postponed: Device clip \"$name\" not yet mapped.")
+    }
   }
 
   // --- Transport State Change Handler ---
@@ -637,12 +633,12 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
       // Only process if the slot is currently playing and has a name
       if (name.isEmpty() || slotState.isPlaying != true) {
-          return
+        return
       }
 
       // Try to handle as a stop command first
       if (handleStopCommand(slotState, name)) {
-          return // Stop command handled, nothing more to do
+        return // Stop command handled, nothing more to do
       }
 
       // If not a stop command, handle as a potential launch command
@@ -703,17 +699,17 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
         // If this was a stop command clip finishing, we don't need to do anything further
         if (currentName.startsWith(stopKeyword)) {
-            host.println("   -> Stop command clip finished. No further action needed.")
-            slotState.deviceSlot = null // Ensure reference is cleared
-            return
+          host.println("   -> Stop command clip finished. No further action needed.")
+          slotState.deviceSlot = null // Ensure reference is cleared
+          return
         }
 
         // Otherwise, stop the associated device clip IF the setting is OFF
         if (!keepDevicesPlayingOnPatternStop) {
-            host.println("   -> 'Keep Devices Playing' is OFF. Stopping device clip for pattern \"${slotState.name}\".")
-            findAndStopDeviceClip(slotState.name)
+          host.println("   -> 'Keep Devices Playing' is OFF. Stopping device clip for pattern \"${slotState.name}\".")
+          findAndStopDeviceClip(slotState.name)
         } else {
-            host.println("   -> 'Keep Devices Playing' is ON. Device clip for pattern \"${slotState.name}\" will continue.")
+          host.println("   -> 'Keep Devices Playing' is ON. Device clip for pattern \"${slotState.name}\" will continue.")
         }
         // We still clear the script's direct reference to the deviceSlot here because this *pattern slot* has stopped.
         // The device clip might continue playing due to the setting, but this specific pattern instance is done triggering it.
@@ -729,7 +725,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
   }
 
   override fun exit() {
-    host.println("Tracker Pattern Trigger Exiting... (v$SCRIPT_VERSION)")
+      host.println("=== Pattern Tracker Extension v$versionFromProperties Exited ===")
   }
 
   override fun flush() {

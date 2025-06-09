@@ -1,5 +1,6 @@
 package com.b3rnhard.steprecorder
 
+import com.b3rnhard.steprecorder.StepRecorderExtensionDefinition.Companion.versionFromProperties
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.ControllerExtensionDefinition
 import com.bitwig.extension.controller.api.*
@@ -39,6 +40,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   private val chordThresholdMs = 100L // Notes within 100ms are considered a chord
 
   override fun init() {
+    host.println("=== Step Recorder v${versionFromProperties} Starting ===")
+
     documentState = host.documentState
     application = host.createApplication()
     transport = host.createTransport()
@@ -55,7 +58,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
     arrangerCursorClip = host.createArrangerCursorClip(stepper.clipGridWidth, 128)
     arrangerCursorClip.exists().markInterested()
-//    stepper.setXFromBeats(1.0)
 
     clipLauncherCursorClip.playStart.markInterested()
     transport.playPosition().markInterested()
@@ -129,8 +131,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       host.showPopupNotification("Step Recorder Initialized (No MIDI Input Assigned)")
       host.println("No MIDI input assigned - MIDI learn and note input features disabled")
     }
-
-    host.showPopupNotification("Use controller preferences to learn forward/backward buttons!")
   }
 
   private fun updateStepLength() {
@@ -423,7 +423,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   }
 
   override fun exit() {
-    host.println("Step Recorder Exited")
+    host.println("=== Step Recorder $versionFromProperties Exited ===")
   }
 
   override fun flush() {

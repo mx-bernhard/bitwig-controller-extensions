@@ -1,5 +1,6 @@
 package com.b3rnhard.midisplitter
 
+import com.b3rnhard.midisplitter.MidiSplitterExtensionDefinition.Companion.versionFromProperties
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.ControllerExtensionDefinition
 import com.bitwig.extension.controller.api.ControllerHost
@@ -12,33 +13,35 @@ class MidiSplitterExtension(
 ) : ControllerExtension(definition, host) {
 
     private lateinit var midiIn: MidiIn
-    private lateinit var virtualOut1: MidiOut
-    private lateinit var virtualOut2: MidiOut
+    private lateinit var midiOut1: MidiOut
+    private lateinit var midiOut2: MidiOut
 
     override fun init() {
+        host.println("=== Midi Splitter Extension v${versionFromProperties} Starting ===")
+
         // Get MIDI ports
         midiIn = getMidiInPort(0)
-        virtualOut1 = getMidiOutPort(0)
-        virtualOut2 = getMidiOutPort(1)
+        midiOut1 = getMidiOutPort(0)
+        midiOut2 = getMidiOutPort(1)
 
         // Set up MIDI callback to forward all messages
         midiIn.setMidiCallback { status: Int, data1: Int, data2: Int ->
             // Forward to both virtual outputs
-            virtualOut1.sendMidi(status, data1, data2)
-            virtualOut2.sendMidi(status, data1, data2)
+            midiOut1.sendMidi(status, data1, data2)
+            midiOut2.sendMidi(status, data1, data2)
         }
 
         // Forward SysEx messages as well
         midiIn.setSysexCallback { sysexData: String ->
-            virtualOut1.sendSysex(sysexData)
-            virtualOut2.sendSysex(sysexData)
+            midiOut1.sendSysex(sysexData)
+            midiOut2.sendSysex(sysexData)
         }
 
-        host.showPopupNotification("MIDI Splitter initialized - forwarding to 2 virtual outputs")
+        host.showPopupNotification("MIDI Splitter $versionFromProperties initialized - forwarding to 2 midi outputs")
     }
 
     override fun exit() {
-        host.showPopupNotification("MIDI Splitter stopped")
+        host.println("=== Midi Splitter Extension v$versionFromProperties Exited ===")
     }
 
     override fun flush() {
