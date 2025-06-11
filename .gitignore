@@ -3,3 +3,7 @@ target/
 .idea/
 .fleet
 
+scripts/node_modules/
+scripts/.yarn/cache/
+scripts/.yarn/install-state.gz
+
