@@ -5,7 +5,7 @@
     <parent>
         <groupId>com.b3rnhard</groupId>
         <artifactId>bitwig-controller-extensions-parent</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
     </parent>
 
     <artifactId>pattern-tracker</artifactId>
