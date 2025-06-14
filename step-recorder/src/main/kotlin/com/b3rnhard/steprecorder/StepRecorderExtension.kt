@@ -140,8 +140,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       host.preferences.getNumberSetting("Tracks observed", "Tracking", 0.0, 500.0, 1.0, "", 100.0)
     val scenesSetting =
       host.preferences.getNumberSetting("Scenes per track observed", "Tracking", 0.0, 500.0, 1.0, "", 100.0)
-    if (tracksSetting.get().toInt() == 0 || scenesSetting.get().toInt() == 0) return null
-    val trackBank = host.createTrackBank(tracksSetting.get().toInt(), 0, scenesSetting.get().toInt(), false)
+    if (tracksSetting.raw.toInt() == 0 || scenesSetting.raw.toInt() == 0) return null
+    val trackBank = host.createTrackBank(tracksSetting.raw.toInt(), 0, scenesSetting.raw.toInt(), false)
     trackBank.setShouldShowClipLauncherFeedback(true)
     return trackBank
   }

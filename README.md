@@ -83,23 +83,27 @@ Step recording with various step lengths
   functionality provided, i.e., the step recording is not disabled automatically
   and the internal step recording cursor is not reset to the start of the clip 
   
-  When changing either observation settings, reload your project. The extension
-  cannot update these values while running due to the limitations of the API
-  available.
-- **Step Recording**: Play notes on your MIDI keyboard to add them to the currently selected clip in the clip launcher
+  When changing either observation settings, reload the extension (by disabling
+  and enabling it again). The extension cannot update these values while running
+  due to the limitations of the API available.
+- **Step Recording**: Play notes on your MIDI keyboard to add them to the
+  currently selected clip in the clip launcher
 - **Navigate backward/forward**: Move cursor back and forth. This allows to fix
   mistakes or insert gaps. Can be combined with **Toggle: clear while moving
   cursor** to either delete while navigating or go back and add more
 - **Musical Note Lengths**: Standard note lengths from 32/1 down to 1/64
 - **Triplet Support**: Regular and triplet timing for all note values
-- **Note Velocity**: velocity of the midi input or a fixed value is used for all notes added to the selected clip. Two settings allow to change that:
+- **Note Velocity**: velocity of the midi input or a fixed value is used for all
+  notes added to the selected clip. Two settings allow to change that:
   
   - Fixed Velocity: set to ✓ for the Note Velocity Value setting to be used
   - Note Velocity: the fixed velocity value (0-127) to use
 - **Chord Detection**: 100ms threshold for chord recognition to enter chords at the current position
 - **MIDI Learn Navigation**: CC-based cursor movement controls
-- **Toggle: clear old notes**: New notes at the same position replace existing ones or don't depending on the toggle setting
-- **Toggle: clear while moving cursor**: delete notes when moving forward or backward, allows to insert gaps or delete mistakes
+- **Toggle: clear old notes**: New notes at the same position replace existing
+  ones or don't depending on the toggle setting
+- **Toggle: clear while moving cursor**: delete notes when moving forward or
+  backward, allows to insert gaps or delete mistakes
 - **Button. clear notes under cursor**: deletes notes at the current position
 - **Sleep when transport is playing**: is temporarily disabled when transport is
   playing, but remembers if it was enabled prior to starting transport
