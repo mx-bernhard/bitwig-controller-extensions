@@ -323,7 +323,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     val noteLengthIndex = mapCCToNoteValueIndex(value) // Use the received MIDI value
     if (noteLengthIndex in beatLengthTexts.indices) {
       stepLengthValueSetting.set(beatLengthTexts[noteLengthIndex])
-      host.showPopupNotification("Step Length: ${beatLengthTexts[noteLengthIndex]}")
     }
   }
 
