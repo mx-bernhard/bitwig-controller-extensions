@@ -8,6 +8,8 @@ import com.bitwig.extension.controller.api.*
 class StepRecorderExtension(definition: ControllerExtensionDefinition, host: ControllerHost) :
   ControllerExtension(definition, host) {
 
+  private lateinit var fixedVelocityToggle: ISettableBooleanValue
+  private lateinit var fixedVelocitySetting: SettableRangedValue
   private lateinit var documentState: DocumentState
   private lateinit var application: Application
   private lateinit var transport: Transport
@@ -34,7 +36,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   // Chord detection
   private val activeNotes = mutableMapOf<Int, Long>()
-  private val pendingNotes = mutableSetOf<Int>()
+  private val pendingNotes = mutableListOf<Pair<Int, Int>>()
   private var firstNoteTime: Long = 0
   private var lastNoteOnTime: Long = 0
   private val chordThresholdMs = 100L // Notes within 100ms are considered a chord
@@ -72,6 +74,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     setupClearToggle()
     setupNoteSelectionObserver()
     setClearOldNotesWhenRecording()
+    setupVelocity()
 
     updateStepLength()
     resetCursorClipToPlayStart()
@@ -97,7 +100,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
           if (velocity > 0) {
             // Note On
             activeNotes[note] = currentTime
-            pendingNotes.add(note)
+            pendingNotes.add(note to velocity)
 
             // Track first note time only when starting a new chord
             if (pendingNotes.size == 1) {
@@ -133,6 +136,18 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
   }
 
+  private fun setupVelocity() {
+    fixedVelocityToggle = documentState.getEnumBasedBooleanSetting("Fixed velocity", "Step Recorder", false)
+    MidiLearnBinding(host, "Fixed Velocity Binding") {
+      fixedVelocityToggle.set(!(fixedVelocityToggle.get()))
+    }
+    fixedVelocitySetting =
+      documentState.getNumberSetting("Note Velocity", "Step Recorder", 0.0, 127.0, 1.0, "units (0-127)", 127.0)
+    MidiLearnBinding(host, "Fixed Note Velocity Binding") {
+      fixedVelocitySetting.set(it.toDouble())
+    }
+  }
+
   private fun updateStepLength() {
     stepper.updateNoteLengthInIntegerRepresentation(stepLengthValueSetting.get(), tripletSetting.get())
   }
@@ -149,8 +164,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       MidiLearnBinding(
         host,
         "Toggle triplet",
-        "MIDI Learn",
-        "Not Mapped",
         {
           val current = tripletSetting.get()
           val newValue = if (current === "Regular") "Triplet" else "Regular"
@@ -174,7 +187,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
 
     cursorForwardAction.addSignalObserver(action)
-    midiLearnBindings.add(MidiLearnBinding(host, "Forward Button", "MIDI Learn", "Not Mapped", action.withArg()))
+    midiLearnBindings.add(MidiLearnBinding(host, "Forward Button", action.withArg()))
   }
 
   private fun setupBackward() {
@@ -193,7 +206,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
 
     cursorBackwardAction.addSignalObserver(action)
-    midiLearnBindings.add(MidiLearnBinding(host, "Backward Button", "MIDI Learn", "Not Mapped", action.withArg()))
+    midiLearnBindings.add(MidiLearnBinding(host, "Backward Button", action.withArg()))
   }
 
   private lateinit var clearToggleSetting: ISettableBooleanValue
@@ -210,8 +223,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       MidiLearnBinding(
         host,
         "Clear Toggle on forward/backward Button",
-        "MIDI Learn",
-        "Not Mapped",
         { clearToggleSetting.set(!clearToggleSetting.get()) }
       )
     )
@@ -229,8 +240,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       MidiLearnBinding(
         host,
         "Clear old notes on note input Toggle",
-        "MIDI Learn",
-        "Not Mapped",
         { clearNotesOnInputSetting.set(!clearNotesOnInputSetting.get()) }
       )
     )
@@ -247,8 +256,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       MidiLearnBinding(
         host,
         "Clear Button",
-        "MIDI Learn",
-        "Not Mapped",
         this::clearNotesAtCurrentStepRange.withArg()
       )
     )
@@ -271,7 +278,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
     midiLearnBindings.add(
       MidiLearnBinding(
-        host, "Step Length Value Control", "MIDI Learn", "Not Mapped",
+        host, "Step Length Value Control",
         { changeStepLengthValue(it) })
     )
   }
@@ -306,7 +313,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       }
     }
 
-    midiLearnBindings.add(MidiLearnBinding(host, "Enable/Disable", "MIDI Learn", "Not Mapped") {
+    midiLearnBindings.add(MidiLearnBinding(host, "Enable/Disable") {
       val newEnabled = !enableSetting.get()
       enableSetting.set(newEnabled)
       val text = "Step recorder is now ${if (newEnabled) "enabled" else "disabled"}"
@@ -353,18 +360,18 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   private fun processPendingNotes() {
     if (pendingNotes.isNotEmpty()) {
-      val noteList = pendingNotes.sorted()
+      val noteList = pendingNotes
 
       if (noteList.size == 1) {
-        addNotesToCurrentClip(noteList, 127)
+        addNotesToCurrentClip(noteList)
       } else {
         val noteTimeSpan = lastNoteOnTime - firstNoteTime
 
         if (noteTimeSpan <= chordThresholdMs) {
-          addNotesToCurrentClip(noteList, 127)
+          addNotesToCurrentClip(noteList)
         } else {
           noteList.forEach { note ->
-            addNotesToCurrentClip(listOf(note), 127)
+            addNotesToCurrentClip(listOf(note))
           }
         }
       }
@@ -373,7 +380,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     }
   }
 
-  private fun addNotesToCurrentClip(notes: List<Int>, velocity: Int) {
+  private fun addNotesToCurrentClip(notes: List<Pair<Int, Int>>) {
     if (!clipLauncherCursorClip.exists().get()) {
       host.showPopupNotification("No active clip found. Create or select a clip and open piano roll.")
       return
@@ -395,14 +402,15 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       }
 
       // Add all notes at the same position (chord)
-      notes.forEach { note ->
+      notes.forEach { (note, velocity) ->
         host.println("setStep y:${note}, x:${stepper.x}")
         // - 0.0001 prevents note lengths too close to the next and clearing deletes both
         val nl = stepper.stepLengthInBeats - 0.0001
-        clipLauncherCursorClip.setStep(0, stepper.x, note, velocity, nl)
+        val actualVelocity = if (fixedVelocityToggle.get()) fixedVelocitySetting.raw.toInt() else velocity
+        clipLauncherCursorClip.setStep(0, stepper.x, note, actualVelocity, nl)
       }
 
-      val noteNames = notes.joinToString(", ") { getNoteNameFromMidi(it) }
+      val noteNames = notes.joinToString(", ") { getNoteNameFromMidi(it.first) }
       host.println("Added $noteNames at step ${stepper.x}")
 
       updateCursorSelection(stepper.x)
@@ -432,7 +440,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   private fun resetCursorClipToPlayStart() {
     val playStartValue = clipLauncherCursorClip.playStart.get()
-    val newStep = stepper.resetXFromBeats(playStartValue, clipLauncherCursorClip)
+    stepper.resetXFromBeats(playStartValue, clipLauncherCursorClip)
 
     host.println(
       "Reset step recorder cursor to play start ${
