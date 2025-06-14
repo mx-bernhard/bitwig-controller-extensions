@@ -1,7 +1,7 @@
 # Bitwig Studio Extensions
 
 This project contains three Bitwig Studio controller extensions. Some of it was written with Cursor.
-Currently requires the latest API version. Copy the release files with `.bwextension` to
+Currently, requires the latest API version. Copy the release files with `.bwextension` to
 `c:\Users\<your-user>\Documents\Bitwig Studio\Extensions` and add the extensions to your running
 Bitwig in the settings -> controllers section
 
@@ -54,12 +54,12 @@ Create a Group Track named exactly **"Patterns"** containing:
    - **Number of Tracks per Group**:
      - Default 5
      - How many tracks are "seen" by this extension within the **Devices** and the **Patterns** group
-     - the higher the more resources this may drain from your system
+     - the higher, the more resources this may drain from your system
    - **Number of root Groups**: Default 2 (Patterns + Devices groups) - if the first two groups are the aforementioned groups, you don't need more than the value 2 here.
    - **Number of Slots per Track**:
      - Default is 5
      - How many slots in the clip launcher are "seen" by this extension within the **Devices** and the **Patterns** group
-     - the higher the more resources this may drain from your system
+     - the higher, the more resources this may drain from your system
    - **Stop Keyword**: Default `[stop]` (customize if you want to use a different word)
    - It is unknown if these settings could just be fixed to maximum values due to possible performance considerations.
      The extension needs to observe changes in your project and remap automatically.
@@ -72,16 +72,37 @@ Create a Group Track named exactly **"Patterns"** containing:
 Step recording with various step lengths
 
 - **Toggle: Enable/disable**: arm or disarm this extension
-- **Disabled when switching to a different clip**: disables itself automatically when opening a different clip.
+- **Disabled when switching to a different clip**:
+  disables itself automatically when opening a different clip.
+  Depends on two settings that require to have a value bigger than 0:
+  
+  - Scenes per track observed
+  - Tracks observed
+  
+  Everything beyond these observation scopes is ignored in terms of the
+  functionality provided, i.e., the step recording is not disabled automatically
+  and the internal step recording cursor is not reset to the start of the clip 
+  
+  When changing either observation settings, reload your project. The extension
+  cannot update these values while running due to the limitations of the API
+  available.
 - **Step Recording**: Play notes on your MIDI keyboard to add them to the currently selected clip in the clip launcher
-- **Musical Note Values**: Standard note values from 32/1 down to 1/64
+- **Navigate backward/forward**: Move cursor back and forth. This allows to fix
+  mistakes or insert gaps. Can be combined with **Toggle: clear while moving
+  cursor** to either delete while navigating or go back and add more
+- **Musical Note Lengths**: Standard note lengths from 32/1 down to 1/64
 - **Triplet Support**: Regular and triplet timing for all note values
+- **Note Velocity**: velocity of the midi input or a fixed value is used for all notes added to the selected clip. Two settings allow to change that:
+  
+  - Fixed Velocity: set to ✓ for the Note Velocity Value setting to be used
+  - Note Velocity: the fixed velocity value (0-127) to use
 - **Chord Detection**: 100ms threshold for chord recognition to enter chords at the current position
 - **MIDI Learn Navigation**: CC-based cursor movement controls
 - **Toggle: clear old notes**: New notes at the same position replace existing ones or don't depending on the toggle setting
 - **Toggle: clear while moving cursor**: delete notes when moving forward or backward, allows to insert gaps or delete mistakes
 - **Button. clear notes under cursor**: deletes notes at the current position
-- **Sleep when transport is playing**: is temporarily disabled when transport is playing
+- **Sleep when transport is playing**: is temporarily disabled when transport is
+  playing, but remembers if it was enabled prior to starting transport
 - **MIDI learn for all features**: go to preferences of controller extension and click on
   "Learning..." button and send CC values. When learning was successful, neither "Learning..." nor
   "Not Mapped" appear clicked.
