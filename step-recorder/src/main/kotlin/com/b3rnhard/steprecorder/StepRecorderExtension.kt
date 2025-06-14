@@ -13,7 +13,6 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   private lateinit var documentState: DocumentState
   private lateinit var application: Application
   private lateinit var transport: Transport
-  private lateinit var cursorTrack: CursorTrack
   private lateinit var clipLauncherCursorClip: Clip
   private lateinit var arrangerCursorClip: Clip
   private lateinit var midiIn: MidiIn
@@ -49,9 +48,8 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
     transport = host.createTransport()
     preferences = host.preferences
 
-    cursorTrack = host.createCursorTrack("steprecorder:CursorTrack", "Cursor Track", 0, 100, true)
-    val trackBank = host.createTrackBank(100, 0, 100, false)
-    trackBank.setShouldShowClipLauncherFeedback(true)
+    val trackBank = setupSelectionObserverSettings()
+
     stepper = Stepper(host)
     clipLauncherCursorClip = host.createLauncherCursorClip(stepper.clipGridWidth, 128)
     clipLauncherCursorClip.exists().markInterested()
@@ -134,6 +132,18 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       host.showPopupNotification("Step Recorder Initialized (No MIDI Input Assigned)")
       host.println("No MIDI input assigned - MIDI learn and note input features disabled")
     }
+  }
+
+  private fun setupSelectionObserverSettings(): TrackBank? {
+
+    val tracksSetting =
+      host.preferences.getNumberSetting("Tracks observed", "Tracking", 0.0, 500.0, 1.0, "", 100.0)
+    val scenesSetting =
+      host.preferences.getNumberSetting("Scenes per track observed", "Tracking", 0.0, 500.0, 1.0, "", 100.0)
+    if (tracksSetting.get().toInt() == 0 || scenesSetting.get().toInt() == 0) return null
+    val trackBank = host.createTrackBank(tracksSetting.get().toInt(), 0, scenesSetting.get().toInt(), false)
+    trackBank.setShouldShowClipLauncherFeedback(true)
+    return trackBank
   }
 
   private fun setupVelocity() {
@@ -283,23 +293,27 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   private var needsResetToPlayStart = true
 
-  private fun setupEnable(trackBank: TrackBank) {
-    val bankUtil = BankUtil(trackBank)
+  private fun setupEnable(trackBank: TrackBank?) {
+    if (trackBank != null) {
 
-    bankUtil.forEachBank { bank, index ->
-      bank.addIsSelectedObserver({ slotIndex: Int, isSelected: Boolean ->
-        if (enableSetting.get()) {
+      val bankUtil = BankUtil(trackBank)
+
+      bankUtil.forEachBank { bank, index ->
+        bank.addIsSelectedObserver({ slotIndex: Int, isSelected: Boolean ->
+          if (enableSetting.get()) {
+            enableSetting.set(false)
+            needsResetToPlayStart = true
+            host.println("Step recorder is now disabled")
+          }
+        })
+      }
+
+      bankUtil.forEachClipLauncherSlot { slot, trackIndex, slotIndex ->
+        slot.isSelected.addValueObserver { isSelected ->
           enableSetting.set(false)
           needsResetToPlayStart = true
           host.println("Step recorder is now disabled")
         }
-      })
-    }
-
-    bankUtil.forEachClipLauncherSlot { slot, trackIndex, slotIndex ->
-      slot.isSelected.addValueObserver { isSelected ->
-        enableSetting.set(false)
-        needsResetToPlayStart = true
       }
     }
 
