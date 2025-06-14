@@ -16,20 +16,24 @@ class Stepper(val host: ControllerHost) {
 
   private val stepSize: Double = 1.0 / integerBasedFactor
 
-  fun initialize(clipLauncherCursorClip: Clip) {
-    clipLauncherCursorClip.setStepSize(stepSize)
+  private var clip: Clip? = null
+
+  fun initialize(clip: Clip) {
+    this@Stepper.clip = clip
+    clip.setStepSize(stepSize)
   }
 
   var cursorStep: Int = 0
+    set(value) {
+      field = value
+      ensureWithinGridSize()
+    }
 
   val clipGridWidth
     get() = this.minimumStepsAmount * integerBasedFactor
 
   // Default to 16th note
   private var integerBasedNoteLength: Int = (0.25 * integerBasedFactor).roundToInt()
-
-  val rangeOfXForCurrentStep: IntRange
-    get() { return cursorStep..(cursorStep + integerBasedNoteLength - 1)}
 
   private fun integerBasedToBeats(integerValue: Int): Double {
     return integerValue.toDouble() / integerBasedFactor.toDouble();
@@ -39,27 +43,44 @@ class Stepper(val host: ControllerHost) {
     return (beatsValue * integerBasedFactor).roundToInt()
   }
 
+  private var scrollOffset: Int = 0
+
+  private fun ensureWithinGridSize() {
+    if (!(0 + scrollOffset..24000 + scrollOffset).contains(cursorStep)) {
+      clip?.scrollToStep(cursorStep)
+      scrollOffset = cursorStep
+    }
+  }
+
   val stepLengthInBeats: Double
     get() = integerBasedToBeats(integerBasedNoteLength)
 
   fun forward() {
-    cursorStep = (cursorStep + integerBasedNoteLength).coerceAtLeast(0)
+    cursorStep = (cursorStep + integerBasedNoteLength)
     host.println("Cursor moved forward to: ${integerBasedToBeats(cursorStep)} beats")
   }
 
   fun backward() {
-    cursorStep = (cursorStep - integerBasedNoteLength).coerceAtLeast(0)
+    cursorStep = (cursorStep - integerBasedNoteLength)
     host.println("Cursor moved backward to: ${integerBasedToBeats(cursorStep)} beats")
   }
 
   val x: Int
     get() {
-      return cursorStep
+      return cursorStep - scrollOffset
     }
 
-  fun resetXFromBeats(beats: Double, clip: Clip) {
-    cursorStep = 0
-    clip.scrollToStep(beatsToIntegerBased(beats))
+  fun resetXFromBeats(beats: Double) {
+    cursorStep = beatsToIntegerBased(beats)
+  }
+
+  fun forCursorStep(cursorStep: Int, action: (x: Int) -> Unit) {
+    val oldCursorStep = cursorStep
+    for (step in cursorStep..cursorStep + integerBasedNoteLength) {
+      this.cursorStep = step
+      action(this.x)
+    }
+    this.cursorStep = oldCursorStep
   }
 
   /**

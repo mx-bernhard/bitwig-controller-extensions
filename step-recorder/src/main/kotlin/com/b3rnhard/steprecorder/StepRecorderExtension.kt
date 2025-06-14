@@ -198,11 +198,9 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
       if (clearToggleSetting.get()) {
         clearNotesAtCurrentStepRange()
       }
-      if (stepper.cursorStep != 0) {
-        stepper.backward()
-        updateCursorSelection(stepper.x)
-        stepper.forward()
-      }
+      stepper.backward()
+      updateCursorSelection(stepper.x)
+      stepper.forward()
     }
 
     cursorBackwardAction.addSignalObserver(action)
@@ -440,7 +438,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
 
   private fun resetCursorClipToPlayStart() {
     val playStartValue = clipLauncherCursorClip.playStart.get()
-    stepper.resetXFromBeats(playStartValue, clipLauncherCursorClip)
+    stepper.resetXFromBeats(playStartValue)
 
     host.println(
       "Reset step recorder cursor to play start ${
@@ -463,9 +461,7 @@ class StepRecorderExtension(definition: ControllerExtensionDefinition, host: Con
   }
 
   private fun clearNotesAtCurrentStepRange() {
-    val range = stepper.rangeOfXForCurrentStep
-    host.println("Clear step range ${range.first}..${range.last}")
-    range.forEach {
+    stepper.forCursorStep(stepper.cursorStep) {
       clipLauncherCursorClip.clearStepsAtX(0, it)
     }
   }
