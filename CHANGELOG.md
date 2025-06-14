@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## <small>1.1.1 (2025-06-14)</small>
+
+* fix(step-recorder): fix settings again so that they actually work ([9875cea](https://github.com/mx-bernhard/bitwig-controller-extensions/commit/9875cea)), closes [#9](https://github.com/mx-bernhard/bitwig-controller-extensions/issues/9)
+
+
+
 ## 1.1.0 (2025-06-14)
 
 * docs(step-recorder): update docs for various changes ([68f0feb](https://github.com/mx-bernhard/bitwig-controller-extensions/commit/68f0feb)), closes [#9](https://github.com/mx-bernhard/bitwig-controller-extensions/issues/9)
