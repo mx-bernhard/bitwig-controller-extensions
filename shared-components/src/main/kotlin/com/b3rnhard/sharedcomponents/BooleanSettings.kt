@@ -1,10 +1,11 @@
-package com.b3rnhard.steprecorder
+package com.b3rnhard.sharedcomponents
 
 import com.bitwig.extension.callback.BooleanValueChangedCallback
+import com.bitwig.extension.controller.api.BooleanValue
 import com.bitwig.extension.controller.api.DocumentState
 import com.bitwig.extension.controller.api.SettableEnumValue
 
-interface ISettableBooleanValue : com.bitwig.extension.controller.api.BooleanValue {
+interface ISettableBooleanValue : BooleanValue {
   fun set(value: Boolean)
   fun toggle()
 }
@@ -41,7 +42,7 @@ class SettableBooleanValue(val internalSetting: SettableEnumValue, val trueValue
   }
 
   override fun isSubscribed(): Boolean {
-    return internalSetting.isSubscribed()
+    return internalSetting.isSubscribed
   }
 
   override fun setIsSubscribed(value: Boolean) {

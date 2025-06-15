@@ -1,9 +1,12 @@
 package com.b3rnhard.steprecorder
-
+import com.b3rnhard.sharedcomponents.*
 import com.b3rnhard.steprecorder.StepRecorderExtensionDefinition.Companion.versionFromProperties
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.ControllerExtensionDefinition
 import com.bitwig.extension.controller.api.*
+import com.b3rnhard.sharedcomponents.BankUtil
+import com.b3rnhard.sharedcomponents.MidiLearnBinding
+import com.b3rnhard.sharedcomponents.withArg
 
 class StepRecorderExtension(definition: ControllerExtensionDefinition, host: ControllerHost) :
   ControllerExtension(definition, host) {

@@ -1,6 +1,8 @@
 package com.b3rnhard
 
 import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.versionFromProperties
+import com.b3rnhard.sharedcomponents.ISettableBooleanValue
+import com.b3rnhard.sharedcomponents.getEnumBasedBooleanSetting
 
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.api.ClipLauncherSlot
@@ -47,8 +49,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
   // --- Transport State ---
   private var isTransportPlaying: Boolean = false
 
-  // New setting state for keeping device clips playing
-  private var keepDevicesPlayingOnPatternStop = false
+  private var keepDevicesPlayingSetting: ISettableBooleanValue? = null
 
   // --- Helper Functions ---
 
@@ -254,34 +255,28 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
       "Tracks",
       "Number of Tracks per Group",
       1.0,
-      128.0,
+      200.0,
       1.0,
       "",
-      5.0
+      25.0
     )
     val rootGroupsSetting = preferences.getNumberSetting(
       "Tracks",
       "Number of root Groups",
       1.0,
-      16.0,
+      200.0,
       1.0,
       "",
-      2.0
+      25.0
     )
     val slotsSetting = preferences.getNumberSetting(
       "Slots",
       "Number of Slots per Track",
       1.0,
-      128.0,
+      500.0,
       1.0,
       "",
-      5.0
-    )
-    val stopKeywordSetting = preferences.getStringSetting(
-      "Pattern",
-      "Stop Keyword",
-      1024,
-      "[stop]"
+      25.0
     )
 
     fun addObserverForSetting(name: String, writeValue: (newValue: Int) -> Unit, setting: SettableRangedValue) {
@@ -298,6 +293,12 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
     addObserverForSetting("slots", { numSlots = it }, slotsSetting)
     addObserverForSetting("root groups", { numRootTracks = it }, rootGroupsSetting)
 
+    val stopKeywordSetting = preferences.getStringSetting(
+      "Pattern",
+      "Stop Keyword",
+      1024,
+      "[stop]"
+    )
     stopKeywordSetting.addValueObserver { value ->
       stopKeyword = value
       host.println("Stop keyword changed to \"$value\"")
@@ -307,23 +308,24 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 
     host.println("Tracks: $numTracks, Slots: $numSlots, Root groups: $numRootTracks, Stop keyword: \"$stopKeyword\"")
 
-    // --- New Setting: Keep Devices Playing on Pattern Stop (Using EnumSetting) ---
-    val documentState = host.documentState
-    val keepDevicesPlayingEnumSetting = documentState.getEnumSetting(
-      "Keep Devices Playing on Pattern Stop", // Name
-      "Mapping", // Category
-      arrayOf("DISABLED", "ENABLED"), // Enum values
-      "DISABLED" // Default value
-    )
+    setupKeepDevicesPlayingSetting()
+  }
 
-    keepDevicesPlayingEnumSetting.addValueObserver { value ->
-      keepDevicesPlayingOnPatternStop = (value == "ENABLED")
-      host.showPopupNotification("Keep Devices Playing: $value") // Show the actual enum value
+  private fun setupKeepDevicesPlayingSetting() {
+    val documentState = host.documentState
+    val setting = documentState.getEnumBasedBooleanSetting(
+      "Keep Devices Playing on Pattern Stop",
+      "Mapping",
+      false
+    )
+    this.keepDevicesPlayingSetting = setting
+    fun booleanToString(value: Boolean): String = if (value) "enabled" else "disabled"
+
+    setting.addValueObserver { value ->
+      host.showPopupNotification("Keep Devices Playing: ${booleanToString(value)}") // Show the actual enum value
       host.println("Setting 'Keep Devices Playing on Pattern Stop' changed to: $value")
     }
-    // Initialize with the document state value
-    keepDevicesPlayingOnPatternStop = (keepDevicesPlayingEnumSetting.get() == "ENABLED")
-    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${if (keepDevicesPlayingOnPatternStop) "ENABLED" else "DISABLED"}")
+    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${booleanToString(setting.get())}")
   }
 
   override fun init() {
@@ -705,7 +707,7 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
         }
 
         // Otherwise, stop the associated device clip IF the setting is OFF
-        if (!keepDevicesPlayingOnPatternStop) {
+        if (this.keepDevicesPlayingSetting?.get() == false) {
           host.println("   -> 'Keep Devices Playing' is OFF. Stopping device clip for pattern \"${slotState.name}\".")
           findAndStopDeviceClip(slotState.name)
         } else {

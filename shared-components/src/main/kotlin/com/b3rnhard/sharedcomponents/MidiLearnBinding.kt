@@ -1,4 +1,4 @@
-package com.b3rnhard.steprecorder
+package com.b3rnhard.sharedcomponents
 
 import com.bitwig.extension.controller.api.ControllerHost
 import com.bitwig.extension.controller.api.SettableEnumValue

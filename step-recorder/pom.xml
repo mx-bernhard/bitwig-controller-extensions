@@ -9,13 +9,20 @@
         <version>1.1.1</version>
     </parent>
 
-
     <artifactId>step-recorder</artifactId>
     <packaging>jar</packaging>
     <name>Step Recorder</name>
     <properties>
         <extension.filename>StepRecorder</extension.filename>
     </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.b3rnhard</groupId>
+            <artifactId>shared-components</artifactId>
+            <version>1.1.1</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
     <build>
         <plugins>
             <plugin>
