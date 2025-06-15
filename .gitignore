@@ -7,3 +7,5 @@ scripts/node_modules/
 scripts/.yarn/cache/
 scripts/.yarn/install-state.gz
 
+**/pom.xml.versionsBackup
+**/dependency-reduced-pom.xml

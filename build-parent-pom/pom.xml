@@ -1,0 +1,198 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.b3rnhard</groupId>
+    <artifactId>build-parent-pom</artifactId>
+    <version>1.1.0</version>
+    <packaging>pom</packaging>
+    <name>build-parent-pom</name>
+    <repositories>
+        <repository>
+            <id>bitwig</id>
+            <name>Bitwig Maven Repository</name>
+            <url>https://maven.bitwig.com</url>
+        </repository>
+    </repositories>
+
+    <properties>
+        <kotlin.version>2.1.21</kotlin.version>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.bitwig</groupId>
+            <artifactId>extension-api</artifactId>
+            <version>22</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-test</artifactId>
+            <version>${kotlin.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib-jdk8</artifactId>
+            <version>${kotlin.version}</version>
+        </dependency>
+    </dependencies>
+    <build>
+        <sourceDirectory>src/main/kotlin</sourceDirectory>
+
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-maven-plugin</artifactId>
+                    <version>${kotlin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>compile</id>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>compile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>test-compile</id>
+                            <phase>test-compile</phase>
+                            <goals>
+                                <goal>test-compile</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <jvmTarget>1.8</jvmTarget>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+
+                    <executions>
+                        <execution>
+                            <id>default-compile</id>
+                            <phase>none</phase>
+                        </execution>
+                        <execution>
+                            <id>default-testCompile</id>
+                            <phase>none</phase>
+                        </execution>
+                        <execution>
+                            <id>compile</id>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>compile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>testCompile</id>
+                            <phase>test-compile</phase>
+                            <goals>
+                                <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.5.1</version>
+                    <executions>
+                        <execution>
+                            <id>shade</id>
+                            <phase>package</phase>
+                            <goals>
+                                <goal>shade</goal>
+                            </goals>
+                            <configuration>
+                                <createDependencyReducedPom>true</createDependencyReducedPom>
+                                <outputFile>${project.build.directory}/${extension.filename}.bwextension</outputFile>
+                                <shadedArtifactAttached>false</shadedArtifactAttached>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.2</version>
+                    <configuration>
+                        <skip>true</skip>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <version>3.0.0</version>
+                    <executions>
+                        <execution>
+                            <id>copy-bwextension</id>
+                            <phase>install</phase>
+                            <goals>
+                                <goal>run</goal>
+                            </goals>
+                            <configuration>
+                                <target>
+                                    <property environment="env" />
+                                    <condition property="target.dir" value="${bitwig.extensions.dir}">
+                                        <isset property="bitwig.extensions.dir" />
+                                    </condition>
+                                    <condition property="target.dir"
+                                               value="${env.BITWIG_EXTENSIONS_DIR}">
+                                        <and>
+                                            <not>
+                                                <isset property="target.dir" />
+                                            </not>
+                                            <isset property="env.BITWIG_EXTENSIONS_DIR" />
+                                        </and>
+                                    </condition>
+                                    <fail
+                                            message="BITWIG_EXTENSIONS_DIR environment variable or bitwig.extensions.dir system property must be set and not empty.">
+                                        <condition>
+                                            <or>
+                                                <not>
+                                                    <isset property="target.dir" />
+                                                </not>
+                                                <equals arg1="${target.dir}" arg2="" trim="true" />
+                                            </or>
+                                        </condition>
+                                    </fail>
+                                    <echo
+                                            message="Target Bitwig Scripts Directory is set to: ${target.dir}" />
+                                    <mkdir dir="${target.dir}" />
+                                    <copy
+                                            file="${project.build.directory}/${extension.filename}.bwextension"
+                                            tofile="${target.dir}/${extension.filename}.bwextension"
+                                            overwrite="true" />
+                                    <echo
+                                            message="Copied ${extension.filename}.bwextension to ${target.dir}" />
+                                </target>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
