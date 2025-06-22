@@ -3,419 +3,113 @@ package com.b3rnhard
 import com.b3rnhard.PatternTrackerExtensionDefinition.Companion.versionFromProperties
 import com.b3rnhard.sharedcomponents.ISettableBooleanValue
 import com.b3rnhard.sharedcomponents.getEnumBasedBooleanSetting
-
 import com.bitwig.extension.controller.ControllerExtension
-import com.bitwig.extension.controller.api.ClipLauncherSlot
-import com.bitwig.extension.controller.api.ControllerHost
-import com.bitwig.extension.controller.api.SettableRangedValue
-import com.bitwig.extension.controller.api.Track
+import com.bitwig.extension.controller.api.*
 
-// --- Helper Data Classes (Moved outside the main class) ---
-data class DeviceSlotInfo(val slot: ClipLauncherSlot, val track: Track)
+fun SettableRangedValue.intValue(): Int = this.get().toInt()
+
+data class Observation(
+  val tracksPerGroupAmount: SettableRangedValue,
+  val rootTracksAmount: SettableRangedValue,
+  val slotsPerTrackAmount: SettableRangedValue
+)
+
+data class Settings(
+  val observation: Observation,
+  val stopKeyword: SettableStringValue,
+  val keepDevicesPlaying: ISettableBooleanValue,
+  val remapSignal: Unit
+)
+
+data class DeviceSlotInfo(val clipLauncherSlot: ClipLauncherSlot, val track: Track)
+
 data class FireSlotState(
   var name: String = "",
   var isPlaying: Boolean? = null,
-  var deviceSlot: ClipLauncherSlot? = null,
 )
-
-// --- Type Aliases ---
-// Map: parentTrackIndex -> childTrackIndex -> Value
-typealias TrackSlotMap<T> = MutableMap<Int, MutableMap<Int, T>>
-// Map: parentTrackIndex -> childTrackIndex -> slotIndex -> Value
-typealias TrackSlotItemMap<T> = MutableMap<Int, MutableMap<Int, MutableMap<Int, T>>>
 
 class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, host: ControllerHost) :
   ControllerExtension(definition, host) {
-  private val devicesGroupName = "Devices"
-  private val firePatternGroupName = "Patterns"
-
-  // --- State ---
-  private val deviceClipMap: MutableMap<String, DeviceSlotInfo> = mutableMapOf()
-  private val fireSlotsState: TrackSlotItemMap<FireSlotState> = mutableMapOf() // Corrected Type
-
-  // Storing references obtained during init
-  private val topLevelTracks: MutableMap<Int, Track> = mutableMapOf()
-  private val childTracks: TrackSlotMap<Track> = mutableMapOf()
-
-  // Corrected Type: Needs to store ClipLauncherSlot, not FireSlotState
-  private val childSlots: TrackSlotItemMap<ClipLauncherSlot> = mutableMapOf()
-
-  // Remove MAX_TRACKS and MAX_SLOTS usage, make them configurable
-  private var numTracks: Int = 2
-  private var numRootTracks: Int = 2
-  private var numSlots: Int = 2
-  private var stopKeyword: String = "[stop]"
-
-  // --- Transport State ---
-  private var isTransportPlaying: Boolean = false
-
-  private var keepDevicesPlayingSetting: ISettableBooleanValue? = null
-
-  // --- Helper Functions ---
-
-  private fun findAndLaunchDeviceClip(fireClipName: String): ClipLauncherSlot? {
-    val deviceInfo = deviceClipMap[fireClipName]
-    if (deviceInfo != null) {
-      try {
-        if (!deviceInfo.track.exists().get()) {
-          host.println("Warning: Device track for clip \"$fireClipName\" no longer exists. Removing mapping.")
-          deviceClipMap.remove(fireClipName)
-          return null
-        }
-        host.println(
-          "Launching device clip \"$fireClipName\" on track \"${
-            deviceInfo.track.name().get()
-          }\" with no quantization."
-        )
-        deviceInfo.slot.launchWithOptions("none", "default")
-        return deviceInfo.slot
-      } catch (e: Exception) {
-        host.println("Error during launch check/action for $fireClipName: ${e.message}")
-        return null
-      }
-    } else {
-      host.println("Warning: Device clip named \"$fireClipName\" not found.")
-      return null
-    }
-  }
-
-  private fun findAndStopDeviceClip(fireClipName: String) {
-    val deviceInfo = deviceClipMap[fireClipName]
-    try {
-      if (deviceInfo?.track?.exists()?.get() == true) {
-        host.println(
-          "Stopping playback on device track \"${
-            deviceInfo.track.name().get()
-          }\" for clip \"$fireClipName\""
-        )
-        deviceInfo.track.stop()
-      } else {
-        host.println("Warning: Could not find track to stop for device clip \"$fireClipName\" (or track doesn't exist).")
-        if (deviceInfo != null) {
-          deviceClipMap.remove(fireClipName)
-        }
-      }
-    } catch (e: Exception) {
-      host.println("Error during stop check/action for $fireClipName: ${e.message}")
-    }
-  }
-
-  // Helper to process group children and slots
-  private fun processGroupChildren(
-    groupName: String,
-    groupIndex: Int,
-    childrenOfGroup: Map<Int, Track>?,
-    slotsOfGroup: Map<Int, Map<Int, ClipLauncherSlot>>?,
-    slotLogic: (childTrack: Track, childIndex: Int, slot: ClipLauncherSlot, slotIndex: Int) -> Unit
-  ) {
-    if (childrenOfGroup == null || slotsOfGroup == null) {
-      host.println("    WARN: No stored child tracks or slots found for $groupName group index $groupIndex")
-      return
-    }
-    childrenOfGroup.forEach groupChild@{ (childIndex, childTrack) ->
-      if (!childTrack.exists().get() || childTrack.isGroup().get()) {
-        host.println("    Skipping non-existent or nested group child track index $childIndex")
-        return@groupChild
-      }
-      val childTrackName = childTrack.name().get()
-      host.println(
-        "    $groupName Child Track $childIndex: Name=\"$childTrackName\" (Exists: ${
-          childTrack.exists().get()
-        })"
-      )
-      val slotsOfChild = slotsOfGroup[childIndex]
-      if (slotsOfChild == null) {
-        host.println("      WARN: No stored slots found for $groupName child track index $childIndex")
-        return@groupChild
-      }
-      slotsOfChild.forEach groupSlot@{ (slotIndex, slot) ->
-        if (!slot.exists().get()) {
-          host.println("        Skipping non-existent slot index $slotIndex")
-          return@groupSlot
-        }
-        slotLogic(childTrack, childIndex, slot, slotIndex)
-      }
-    }
-  }
-
-  private fun remapClips() {
-    host.println("--- Starting Manual Clip Remapping ---")
-    deviceClipMap.clear()
-    fireSlotsState.values.forEach { parentMap ->
-      parentMap.values.forEach { childMap ->
-        childMap.values.forEach { slotState ->
-          slotState.name = ""
-          slotState.deviceSlot = null
-        }
-      }
-    }
-
-    var deviceGroupFound = false
-    var patternGroupFound = false
-
-    try {
-      host.println("Remap: Iterating through ${topLevelTracks.size} stored top-level tracks.")
-      topLevelTracks.forEach { (trackIndex, track) ->
-        if (!track.exists().get()) {
-          host.println("Remap: Skipping non-existent top-level track index $trackIndex")
-          return@forEach
-        }
-        val trackName = track.name().get()
-        val isGroup = track.isGroup().get()
-        host.println("Remap: Processing stored top-level track $trackIndex: Name=\"$trackName\", IsGroup=$isGroup")
-        if (isGroup && trackName == devicesGroupName) {
-          deviceGroupFound = true
-          host.println("  -> Found DEVICES group (Index $trackIndex). Processing stored children.")
-          processGroupChildren(
-            devicesGroupName,
-            trackIndex,
-            childTracks[trackIndex],
-            childSlots[trackIndex]
-          ) { childTrack, _, slot, slotIndex ->
-            val slotName = slot.name().get()
-            val hasContent = slot.hasContent().get()
-            host.println(
-              "      Slot $slotIndex: Name=\"$slotName\", HasContent=$hasContent (Exists: ${
-                slot.exists().get()
-              })"
-            )
-            if (hasContent && slotName.isNotEmpty()) {
-              if (deviceClipMap.containsKey(slotName)) {
-                host.println(
-                  "        WARN: Duplicate device clip name found: \"$slotName\" on track \"${
-                    childTrack.name().get()
-                  }\". Overwriting."
-                )
-              }
-              host.println(
-                "        Mapping device clip: \"$slotName\" to track \"${
-                  childTrack.name().get()
-                }\" (Track Obj: Exists)"
-              )
-              deviceClipMap[slotName] = DeviceSlotInfo(slot, childTrack)
-            }
-          }
-        } else if (isGroup && trackName == firePatternGroupName) {
-          patternGroupFound = true
-          val parentTrackIndex = trackIndex
-          host.println("  -> Found PATTERNS group (Index $parentTrackIndex). Processing stored children.")
-          val parentStateMap = fireSlotsState.getOrPut(parentTrackIndex) { mutableMapOf() }
-          processGroupChildren(
-            firePatternGroupName,
-            parentTrackIndex,
-            childTracks[parentTrackIndex],
-            childSlots[parentTrackIndex]
-          ) { _, childIndex, slot, slotIndex ->
-            val slotName = slot.name().get()
-            host.println("      Slot $slotIndex: Name=\"$slotName\" (Exists: ${slot.exists().get()})")
-            val patternTrackStateMap = parentStateMap.getOrPut(childIndex) { mutableMapOf() }
-            val patternSlotState = patternTrackStateMap.getOrPut(slotIndex) { FireSlotState() }
-            if (patternSlotState.name != slotName) {
-              host.println("        Updating stored name for [$parentTrackIndex, $childIndex, $slotIndex] from \"${patternSlotState.name}\" to \"$slotName\"")
-              patternSlotState.name = slotName
-            } else {
-              host.println("        Stored name for [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") matches current name (\"$slotName\"). No update needed.")
-            }
-            if (patternSlotState.name.isNotEmpty() && patternSlotState.isPlaying == true && deviceClipMap.containsKey(
-                patternSlotState.name
-              )
-            ) {
-              host.println("        Remap Check: Pattern slot [$parentTrackIndex, $childIndex, $slotIndex] (\"${patternSlotState.name}\") is playing and device mapped. Triggering launch.")
-              patternSlotState.deviceSlot = findAndLaunchDeviceClip(patternSlotState.name)
-            }
-          }
-        }
-      }
-    } catch (e: Exception) {
-      host.println("!!! Error during manual clip remapping: ${e.message}")
-      e.printStackTrace()
-    }
-    if (!deviceGroupFound) {
-      host.println("WARN: '$devicesGroupName' group track not found during remap.")
-    }
-    if (!patternGroupFound) {
-      host.println("WARN: '$firePatternGroupName' group track not found during remap.")
-    }
-    host.println("--- Manual Clip Remapping Finished. Device clips mapped: ${deviceClipMap.size} ---")
-    host.println("--- Mapped Device Clips ---")
-    deviceClipMap.forEach { (key: String, value: DeviceSlotInfo) ->
-      try {
-        host.println("   - \"$key\" on track \"${value.track.name().get()}\"")
-      } catch (e: Exception) {
-        host.println("   - \"$key\" (Error getting track name: ${e.message})")
-      }
-    }
-    host.println("--- Pattern Slot Names After Remap ---")
-    logNestedMapSummary(host, fireSlotsState, "Fire Slots State Structure")
-  }
-
-  private fun setupSettings() {
-    val preferences = host.preferences
-    val tracksSetting = preferences.getNumberSetting(
-      "Tracks",
-      "Number of Tracks per Group",
-      1.0,
-      200.0,
-      1.0,
-      "",
-      25.0
-    )
-    val rootGroupsSetting = preferences.getNumberSetting(
-      "Tracks",
-      "Number of root Groups",
-      1.0,
-      200.0,
-      1.0,
-      "",
-      25.0
-    )
-    val slotsSetting = preferences.getNumberSetting(
-      "Slots",
-      "Number of Slots per Track",
-      1.0,
-      500.0,
-      1.0,
-      "",
-      25.0
-    )
-
-    fun addObserverForSetting(name: String, writeValue: (newValue: Int) -> Unit, setting: SettableRangedValue) {
-      setting.addRawValueObserver { value: Double ->
-        writeValue(value.toInt())
-        host.println(
-          "Number of $name changed to ${value.toInt()}. " +
-                  "Please restart the extension for changes to take effect."
-        )
-      }
-      writeValue(setting.raw.toInt())
-    }
-    addObserverForSetting("tracks", { numTracks = it }, tracksSetting)
-    addObserverForSetting("slots", { numSlots = it }, slotsSetting)
-    addObserverForSetting("root groups", { numRootTracks = it }, rootGroupsSetting)
-
-    val stopKeywordSetting = preferences.getStringSetting(
-      "Pattern",
-      "Stop Keyword",
-      1024,
-      "[stop]"
-    )
-    stopKeywordSetting.addValueObserver { value ->
-      stopKeyword = value
-      host.println("Stop keyword changed to \"$value\"")
-    }
-    // Initialize stopKeyword with the preference value
-    stopKeyword = stopKeywordSetting.get()
-
-    host.println("Tracks: $numTracks, Slots: $numSlots, Root groups: $numRootTracks, Stop keyword: \"$stopKeyword\"")
-
-    setupKeepDevicesPlayingSetting()
-  }
-
-  private fun setupKeepDevicesPlayingSetting() {
-    val documentState = host.documentState
-    val setting = documentState.getEnumBasedBooleanSetting(
-      "Keep Devices Playing on Pattern Stop",
-      "Mapping",
-      false
-    )
-    this.keepDevicesPlayingSetting = setting
-    fun booleanToString(value: Boolean): String = if (value) "enabled" else "disabled"
-
-    setting.addValueObserver { value ->
-      host.showPopupNotification("Keep Devices Playing: ${booleanToString(value)}") // Show the actual enum value
-      host.println("Setting 'Keep Devices Playing on Pattern Stop' changed to: $value")
-    }
-    host.println("Initial 'Keep Devices Playing on Pattern Stop' state: ${booleanToString(setting.get())}")
-  }
+  private var impl: PatternTrackerExtensionImplementation? = null
 
   override fun init() {
-    host.println("=== Pattern Tracker Extension v$versionFromProperties Starting ===")
+    impl = PatternTrackerExtensionImplementation(host)
+  }
 
-    try {
-      // --- Setup Transport Observer ---
-      val transport = host.createTransport()
-      transport.isPlaying().markInterested()
-      transport.isPlaying().addValueObserver { playing ->
-        host.println("Transport isPlaying changed: $playing")
-        isTransportPlaying = playing
-        handleTransportStateChange(playing)
-      }
-      isTransportPlaying = transport.isPlaying().get() // Initial state
-      host.println("Initial Transport State: isPlaying=$isTransportPlaying")
+  override fun exit() {
+    impl?.exit()
+  }
 
-      setupSettings()
+  override fun flush() {}
+}
 
-      // --- Setup Action Button (Existing Remap Clips) ---
-      host.println("Setting up remap action button...")
-      val documentState = host.documentState
-      val remapAction = documentState.getSignalSetting(
-        "Mapping",
-        "Remap Clips",
-        "Scan tracks and map clips by name"
-      )
-      remapAction.addSignalObserver(::remapClips)
-      host.println("Remap action button setup complete.")
+class PatternTrackerExtensionImplementation(val host: ControllerHost) {
+  private val logger: Logger = Logger(host, { Severity.warning })
+  private val devicesGroupName = "Devices"
+  private val firePatternGroupName = "Patterns"
+  private val settings: Settings = setupSettings()
 
-      host.println("Clearing existing references...")
+  private val transport = host.createTransport()
 
-      topLevelTracks.clear()
-      childTracks.clear()
-      childSlots.clear()
+  private val deviceSlotClipMap: MutableMap<String, DeviceSlotInfo> = mutableMapOf()
+  private val firePatternSlotClipState: MutableMap<Int, MutableMap<Int, MutableMap<Int, FireSlotState>>> =
+    mutableMapOf()
+  private val topLevelTracks: MutableMap<Int, Track> = mutableMapOf()
+  private val flattenedTracksByGroup: MutableMap<Int, MutableMap<Int, Track>> = mutableMapOf()
+  private val slotsOfFlattenedTracksByGroup: MutableMap<Int, MutableMap<Int, MutableMap<Int, ClipLauncherSlot>>> =
+    mutableMapOf()
 
-      host.println("Getting project and root track group...")
+  init {
+    logger.logMessage("=== Pattern Tracker Extension v$versionFromProperties Starting ===", Severity.info)
 
+    tryCatch({
+      setupTransportStateChangedHandler()
+
+      val settings = setupSettings()
       val project = host.project
       val rootTrackGroup = project.rootTrackGroup
 
-      host.println("Creating main track bank with size: $numRootTracks")
+      val rootTrackBank = rootTrackGroup.createTrackBank(settings.observation.rootTracksAmount.intValue(), 0, 0, false)
+      rootTrackBank.scrollPosition().set(0)
+      rootTrackBank.setShouldShowClipLauncherFeedback(true)
 
-      val mainTrackBank = rootTrackGroup.createTrackBank(numRootTracks, 0, 0, false)
+      for (topLevelTrackIndex in 0 until rootTrackBank.sizeOfBank) {
+        val topLevelTrack = rootTrackBank.getItemAt(topLevelTrackIndex)
 
-      host.println("Setting main track bank scroll position...")
+        topLevelTracks[topLevelTrackIndex] = topLevelTrack
+        var currentChildTrackMap = flattenedTracksByGroup.getOrPut(topLevelTrackIndex) { mutableMapOf() }
+        val currentChildSlotMap = slotsOfFlattenedTracksByGroup.getOrPut(topLevelTrackIndex) { mutableMapOf() }
 
-      mainTrackBank.scrollPosition().set(0)
+        topLevelTrack.exists().markInterested()
+        topLevelTrack.name().markInterested()
+        topLevelTrack.isGroup().markInterested()
 
-      host.println("Starting to process tracks...")
+        tryCatch({
+          val flattenedTracksGroup = topLevelTrack.createTrackBank(
+            settings.observation.tracksPerGroupAmount.intValue(),
+            0,
+            settings.observation.slotsPerTrackAmount.intValue(),
+            true
+          )
+          flattenedTracksGroup.scrollPosition().set(0)
+          flattenedTracksGroup.setShouldShowClipLauncherFeedback(true)
 
-      for (mainTrackIndex in 0 until mainTrackBank.sizeOfBank) {
-        val mainTrack = mainTrackBank.getItemAt(mainTrackIndex)
+          for (trackIndexOfFlattenedTracksGroup in 0 until flattenedTracksGroup.sizeOfBank) {
+            val trackOfFlattenedTracksGroup = flattenedTracksGroup.getItemAt(trackIndexOfFlattenedTracksGroup)
+            currentChildTrackMap[trackIndexOfFlattenedTracksGroup] = trackOfFlattenedTracksGroup
+            val currentSlotMap = currentChildSlotMap.getOrPut(trackIndexOfFlattenedTracksGroup) { mutableMapOf() }
 
-        host.println("root track ${mainTrack.name()} found.")
+            with(trackOfFlattenedTracksGroup) {
+              exists().markInterested()
+              name().markInterested()
+              isGroup().markInterested()
+            }
 
-        topLevelTracks[mainTrackIndex] = mainTrack
-        childTracks.getOrPut(mainTrackIndex) { mutableMapOf() }
-        childSlots.getOrPut(mainTrackIndex) { mutableMapOf() }
+            val slotsOfChildTrack = trackOfFlattenedTracksGroup.clipLauncherSlotBank()
+            slotsOfChildTrack.scrollPosition().set(0)
 
-        val currentChildTrackMap = childTracks[mainTrackIndex]
-          ?: throw IllegalStateException("$mainTrackIndex not found in map")
-        val currentChildSlotMap = childSlots[mainTrackIndex]
-          ?: throw IllegalStateException("$mainTrackIndex not found in map")
-
-        mainTrack.exists().markInterested()
-        mainTrack.name().markInterested()
-        mainTrack.isGroup().markInterested()
-
-        try {
-          val childBank = mainTrack.createTrackBank(numTracks, 0, numSlots, true)
-          childBank.scrollPosition().set(0)
-          childBank.setShouldShowClipLauncherFeedback(true)
-
-          for (childIndex in 0 until childBank.sizeOfBank) {
-            val childTrack = childBank.getItemAt(childIndex)
-            currentChildTrackMap[childIndex] = childTrack
-            currentChildSlotMap.getOrPut(childIndex) { mutableMapOf() }
-
-            val currentSlotMap = currentChildSlotMap[childIndex]!!
-
-            childTrack.exists().markInterested()
-            childTrack.name().markInterested()
-            childTrack.isGroup().markInterested()
-
-            val slotBank = childTrack.clipLauncherSlotBank()
-            slotBank.scrollPosition().set(0)
-
-            for (slotIndex in 0 until slotBank.sizeOfBank) {
-              val slot = slotBank.getItemAt(slotIndex)
+            for (slotIndex in 0 until slotsOfChildTrack.sizeOfBank) {
+              val slot = slotsOfChildTrack.getItemAt(slotIndex)
               currentSlotMap[slotIndex] = slot
 
               with(slot) {
@@ -424,313 +118,484 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
                 hasContent().markInterested()
                 isPlaying().markInterested()
                 isPlaybackQueued().markInterested()
-                // --- Add slot observers ---
+
+                fun isSlotInGroup(group: String): Boolean =
+                  topLevelTrack.exists().get() && trackOfFlattenedTracksGroup.exists().get() && topLevelTrack.name()
+                    .get() == group && topLevelTrack.isGroup()
+                    .get() && !trackOfFlattenedTracksGroup.isGroup()
+                    .get()
+
                 name().addValueObserver { name ->
-                  if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == devicesGroupName && mainTrack.isGroup().get() && !childTrack.isGroup()
-                      .get()
-                  ) {
-                    setupDeviceSlotMappingLogic(name, hasContent().get(), slot, childTrack, slotIndex)
+                  if (isSlotInGroup(devicesGroupName)) {
+                    setupDeviceSlotMapping(name, hasContent().get(), slot, trackOfFlattenedTracksGroup, slotIndex)
                   }
                 }
+
                 hasContent().addValueObserver { hasContent ->
-                  if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == devicesGroupName && mainTrack.isGroup().get() && !childTrack.isGroup()
-                      .get()
-                  ) {
-                    setupDeviceSlotMappingLogic(name().get(), hasContent, slot, childTrack, slotIndex)
+                  if (isSlotInGroup(devicesGroupName)) {
+                    setupDeviceSlotMapping(name().get(), hasContent, slot, trackOfFlattenedTracksGroup, slotIndex)
                   }
                 }
-                // Fire Pattern Slot Triggering Logic Observer Setup
-                val fireParentTrackIndex = mainTrackIndex
-                val fireChildTrackIndex = childIndex
-                val setupPatternObserverState = { ->
-                  fireSlotsState
-                    .getOrPut(fireParentTrackIndex) { mutableMapOf() }
-                    .getOrPut(fireChildTrackIndex) { mutableMapOf() }
+
+                val getSlotState = {
+                  firePatternSlotClipState
+                    .getOrPut(topLevelTrackIndex) { mutableMapOf() }
+                    .getOrPut(trackIndexOfFlattenedTracksGroup) { mutableMapOf() }
                     .getOrPut(slotIndex) { FireSlotState() }
                 }
+
                 name().addValueObserver { name ->
-                  if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == firePatternGroupName && mainTrack.isGroup()
-                      .get() && !childTrack.isGroup()
-                      .get()
-                  ) {
-                    val patternSlotState = setupPatternObserverState()
-                    setupFireSlotNameLogic(patternSlotState, name, fireParentTrackIndex, fireChildTrackIndex, slotIndex)
+                  if (isSlotInGroup(firePatternGroupName)) {
+                    val patternSlotState = getSlotState()
+                    setupFirePatternSlotNameChangedHandler(
+                      patternSlotState,
+                      name,
+                      topLevelTrackIndex,
+                      trackIndexOfFlattenedTracksGroup,
+                      slotIndex
+                    )
                   }
                 }
+
                 isPlaying().addValueObserver { isPlaying ->
-                  if (!mainTrack.exists().get() || !childTrack.exists().get()) return@addValueObserver
-                  if (mainTrack.name().get() == firePatternGroupName && mainTrack.isGroup()
-                      .get() && !childTrack.isGroup()
-                      .get()
+                  if (isSlotInGroup(firePatternGroupName)
                   ) {
-                    val patternSlotState = setupPatternObserverState()
-                    setupFireSlotPlayingLogic(
+                    val patternSlotState = getSlotState()
+                    handlePatternSlotPlayingStateChanged(
                       patternSlotState,
-                      isPlaying,
-                      fireParentTrackIndex,
-                      fireChildTrackIndex,
-                      slotIndex
+                      isPlaying
                     )
                   }
                 }
               }
             }
           }
-        } catch (e: Exception) {
-          host.println("Error during init observer/reference setup for top-level track $mainTrackIndex: ${e.message}")
-          e.printStackTrace()
+        }) {
+          "Error during init observer/reference setup for top-level track $topLevelTrackIndex: ${it.message}" to Unit
         }
       }
 
       logStoredReferences()
-      host.println("Initialization complete. References stored. Observers attached. Press 'Remap Clips' button to perform initial mapping.")
+    }) { "Error during initialization: ${it.message}" to Unit }
+  }
+
+  private fun handleError(exception: Exception, message: String) {
+    logger.logMessage(message, Severity.error)
+    host.showPopupNotification(message)
+    host.println(message)
+    host.println(exception.stackTraceToString())
+  }
+
+  private fun <TReturn> tryCatch(
+    processor: () -> TReturn,
+    getMessage: (e: Exception) -> Pair<String, TReturn>
+  ): TReturn {
+    try {
+      return processor()
     } catch (e: Exception) {
-      host.println("Error during initialization: ${e.message}")
-      e.printStackTrace()
+      val (message, result) = getMessage(e)
+      handleError(e, message)
+      return result
     }
   }
 
-  private fun logStoredReferences() {
-    host.println("--- Stored References After Init ---")
+  private fun findAndLaunchDeviceClip(fireClipName: String): ClipLauncherSlot? {
+    if (fireClipName.isEmpty()) return null
+    val deviceSlotInfo = deviceSlotClipMap[fireClipName]
+    if (deviceSlotInfo == null) {
+      logger.logMessage("Device clip named \"$fireClipName\" not found.", Severity.warning)
+      return null
+    }
+
+    return tryCatch({
+      if (deviceSlotInfo.track.exists().get()) {
+        deviceSlotInfo.clipLauncherSlot.launchWithOptions("none", "default")
+        return@tryCatch deviceSlotInfo.clipLauncherSlot
+      }
+      logger.logMessage(
+        "Device track for clip \"$fireClipName\" no longer exists. Removing mapping.",
+        Severity.info
+      )
+      deviceSlotClipMap.remove(fireClipName)
+      return@tryCatch null
+    }) { "Error during launch check/action for $fireClipName: ${it.message}" to null }
+  }
+
+  private fun findAndStopDeviceClip(firePatternClipName: String) {
+    if (firePatternClipName.isEmpty()) return
+    val deviceSlotInfo = deviceSlotClipMap[firePatternClipName]
+    if (deviceSlotInfo == null) {
+      logger.logMessage("Device clip named \"$firePatternClipName\" not found.", Severity.warning)
+      return
+    }
+    tryCatch({
+      if (deviceSlotInfo.track.exists().get()) {
+        deviceSlotInfo.track.stop()
+      } else {
+        logger.logMessage(
+          "Could not find track to stop for device clip \"$firePatternClipName\" (or track doesn't exist).",
+          Severity.warning
+        )
+      }
+    }) { "Error during stop check/action for $firePatternClipName: ${it.message}" to Unit }
+  }
+
+  private fun handleStopCommand(stopPrefixedClipTrackName: String): Boolean {
+    val stopKeyword = settings.stopKeyword.get()
+
+    if (stopKeyword == null || !stopPrefixedClipTrackName.startsWith(stopKeyword)) {
+      return false
+    }
+
+    val trackName = stopPrefixedClipTrackName.substring(stopKeyword.length).trim()
+    if (trackName.isNotEmpty()) {
+      val deviceInfo = deviceSlotClipMap.values.find { it.track.name().get() == trackName }
+      if (deviceInfo != null) {
+        deviceInfo.track.stop()
+      } else {
+        logger.logMessage("Could not find device track named \"$trackName\".", Severity.warning)
+      }
+    }
+    return true
+  }
+
+  fun processGroupChildren(
+    index: Int,
+    slotAction: (childTrack: Track, childIndex: Int, slot: ClipLauncherSlot, slotIndex: Int) -> Unit
+  ) {
+    val tracksOfGroup = flattenedTracksByGroup[index]
+    val slotsOfGroup = slotsOfFlattenedTracksByGroup[index]
+    if (tracksOfGroup == null || slotsOfGroup == null) {
+      return
+    }
+    tracksOfGroup.forEach groupChild@{ (childIndex, childTrack) ->
+      if (!childTrack.exists().get() || childTrack.isGroup().get()) {
+        return@groupChild
+      }
+      val slotsOfChild = slotsOfGroup[childIndex]
+      if (slotsOfChild == null) {
+        return@groupChild
+      }
+      slotsOfChild.forEach groupSlot@{ (slotIndex, slot) ->
+        slotAction(childTrack, childIndex, slot, slotIndex)
+      }
+    }
+  }
+
+  private fun remapClips() {
+    logger.logMessage("--- Starting Manual Clip Remapping ---", Severity.trace)
+    deviceSlotClipMap.clear()
+    firePatternSlotClipState.values.forEach { parentMap ->
+      parentMap.values.forEach { childMap ->
+        childMap.values.forEach { slotState ->
+          slotState.name = ""
+        }
+      }
+    }
+    val resultMessageLines = mutableListOf<String>()
+
+    var deviceGroupFound = false
+    var patternGroupFound = false
+
+    tryCatch({
+      topLevelTracks.forEach { (topLevelTrackIndex, track) ->
+        if (!track.exists().get()) {
+          return@forEach
+        }
+        val trackName = track.name().get()
+        val isGroup = track.isGroup().get()
+        if (isGroup && trackName == devicesGroupName) {
+          deviceGroupFound = true
+          processGroupChildren(
+            topLevelTrackIndex
+          ) { childTrack, _, slot, slotIndex ->
+            val clipName = slot.name().get()
+            val hasContent = slot.hasContent().get()
+            if (hasContent && clipName.isNotEmpty()) {
+              if (deviceSlotClipMap.containsKey(clipName)) {
+                resultMessageLines += "Duplicate device clip name found: $clipName on track $trackName"
+              }
+              deviceSlotClipMap[clipName] = DeviceSlotInfo(slot, childTrack)
+            }
+          }
+        } else if (isGroup && trackName == firePatternGroupName) {
+          patternGroupFound = true
+          val parentStateMap = firePatternSlotClipState.getOrPut(topLevelTrackIndex) { mutableMapOf() }
+          processGroupChildren(
+            topLevelTrackIndex
+          ) { _, childIndex, slot, slotIndex ->
+            val slotName = slot.name().get()
+            val patternTrackStateMap = parentStateMap.getOrPut(childIndex) { mutableMapOf() }
+            val patternSlotState = patternTrackStateMap.getOrPut(slotIndex) { FireSlotState() }
+            if (patternSlotState.name != slotName) {
+              patternSlotState.name = slotName
+            }
+            if (patternSlotState.name.isNotEmpty() && patternSlotState.isPlaying == true && deviceSlotClipMap.containsKey(
+                patternSlotState.name
+              )
+            ) {
+              findAndLaunchDeviceClip(patternSlotState.name)
+            }
+          }
+        }
+      }
+    }) {
+      val errorMessage = "Error during manual clip remapping: ${it.message} (see console log)"
+      resultMessageLines += errorMessage
+      errorMessage to Unit
+    }
+    if (!deviceGroupFound) {
+      resultMessageLines += "\"$devicesGroupName\" group track not found during remap."
+    }
+    if (!patternGroupFound) {
+      resultMessageLines += "\"$firePatternGroupName\" group track not found during remap."
+    }
+    if (resultMessageLines.isNotEmpty()) {
+      logger.logMessage(resultMessageLines.joinToString("\n"), Severity.error)
+    }
+    logger.logMessage("--- Pattern Slot Names After Remap ---", Severity.info)
+    logNestedMapSummary(host, firePatternSlotClipState, "Fire Slots State Structure")
+  }
+
+  private fun setupSettings(): Settings {
+    return Settings(
+      setupObservationWindowSettings(),
+      setupStopKeywordSetting(),
+      setupKeepDevicesPlayingSetting(),
+      setupRemapSetting()
+    )
+  }
+
+  private fun setupObservationWindowSettings(): Observation {
+    val tracksPerGroupAmountSetting = host.preferences.getNumberSetting(
+      "Number of Tracks per Group",
+      "Tracks observation window",
+      1.0,
+      200.0,
+      1.0,
+      "",
+      25.0
+    )
+    val rootTracksAmountSetting = host.preferences.getNumberSetting(
+      "Number of root Groups",
+      "Tracks observation window",
+      1.0,
+      200.0,
+      1.0,
+      "",
+      25.0
+    )
+    val slotsAmountPerTrackSetting = host.preferences.getNumberSetting(
+      "Number of Slots per Track",
+      "Slots observation window",
+      1.0,
+      500.0,
+      1.0,
+      "",
+      25.0
+    )
+
+    fun addObserverForSetting(name: String, setting: SettableRangedValue) {
+      setting.addRawValueObserver { value: Double ->
+        logger.logMessage(
+          "Number of $name changed to ${value.toInt()}. " +
+                  "Please restart the extension for changes to take effect.", Severity.info
+        )
+      }
+    }
+    addObserverForSetting("tracks", tracksPerGroupAmountSetting!!)
+    addObserverForSetting("slots", slotsAmountPerTrackSetting!!)
+    addObserverForSetting("root groups", rootTracksAmountSetting!!)
+    return Observation(tracksPerGroupAmountSetting, rootTracksAmountSetting, slotsAmountPerTrackSetting)
+  }
+
+  private fun setupRemapSetting() {
+    val remapAction = host.documentState.getSignalSetting(
+      "Mapping",
+      "Remap Clips",
+      "Scan tracks and map clips by name"
+    )
+    remapAction.addSignalObserver(::remapClips)
+  }
+
+  private fun setupStopKeywordSetting(): SettableStringValue {
+    return host.preferences.getStringSetting(
+      "Pattern",
+      "Stop Keyword",
+      1024,
+      "[stop]"
+    )
+  }
+
+  private fun setupKeepDevicesPlayingSetting(): ISettableBooleanValue {
+    val setting = host.documentState.getEnumBasedBooleanSetting(
+      "Keep Devices Playing on Pattern Stop",
+      "Mapping",
+      false
+    )
+
+    fun booleanToString(value: Boolean): String = if (value) "enabled" else "disabled"
+
+    setting.addValueObserver { value ->
+      logger.logMessage("Keep Devices Playing: ${booleanToString(value)}", Severity.info)
+    }
+    return setting
+  }
+
+  fun logStoredReferences() {
+    host.println("--- Stored References ---")
     host.println("Top Level Tracks (${topLevelTracks.size}):")
     topLevelTracks.forEach { (idx: Int, track: Track) ->
-      try {
+      tryCatch({
         host.println(
           "  [$idx]: Name=\"${track.name().get()}\", IsGroup=${
             track.isGroup().get()
           }, Exists=${track.exists().get()}"
         )
-      } catch (e: Exception) {
-        host.println("  [$idx]: Error getting info: ${e.message}")
+      }) {
+        "[$idx]: Error getting info: ${it.message}" to Unit
       }
     }
-    host.println("Child Tracks (${childTracks.size} groups):")
-    childTracks.forEach { (parentIdx: Int, childMap: MutableMap<Int, Track>) ->
+    flattenedTracksByGroup.forEach { (parentIdx: Int, childMap: MutableMap<Int, Track>) ->
       host.println("  Group $parentIdx (${childMap.size} children):")
       childMap.forEach { (childIdx: Int, childTrack: Track) ->
-        try {
+        tryCatch({
           host.println(
             "    [$parentIdx, $childIdx]: Name=\"${childTrack.name().get()}\", IsGroup=${
               childTrack.isGroup().get()
             }, Exists=${childTrack.exists().get()}"
           )
-        } catch (e: Exception) {
-          host.println("    [$parentIdx, $childIdx]: Error getting info: ${e.message}")
-        }
+        }) { "[$parentIdx, $childIdx]: Error getting info: ${it.message}" to Unit }
       }
     }
-    logNestedMapSummary(host, childSlots, "  Child Slots Structure")
-    host.println("-----------------------------------")
+    logNestedMapSummary(host, slotsOfFlattenedTracksByGroup, "  Child Slots Structure")
   }
 
-  // --- Refactored Setup Logic ---
-  private fun setupDeviceSlotMappingLogic(
+  private fun setupDeviceSlotMapping(
     currentSlotName: String,
     currentHasContent: Boolean,
     slot: ClipLauncherSlot,
-    track: Track, // The actual device track
+    track: Track,
     slotIndex: Int
   ) {
-    try {
-      host.println("   -> DeviceMappingLogic called for slot $slotIndex: name=\"$currentSlotName\", hasContent=$currentHasContent")
-      val currentMappingEntry = deviceClipMap.entries.find { it.value.slot == slot }
+    tryCatch({
+      val currentMappingEntry = deviceSlotClipMap.entries.find { it.value.clipLauncherSlot == slot }
 
       if (currentMappingEntry != null && (currentMappingEntry.key != currentSlotName || !currentHasContent || currentSlotName.isEmpty())) {
-        host.println("    -> Unmapping device clip: \"${currentMappingEntry.key}\"")
-        deviceClipMap.remove(currentMappingEntry.key)
+        deviceSlotClipMap.remove(currentMappingEntry.key)
       }
 
       if (currentHasContent && currentSlotName.isNotEmpty()) {
-        val existingMappingForName = deviceClipMap[currentSlotName]
-        if (existingMappingForName == null || existingMappingForName.slot != slot) {
+        val existingMappingForName = deviceSlotClipMap[currentSlotName]
+        if (existingMappingForName == null || existingMappingForName.clipLauncherSlot != slot) {
           if (existingMappingForName != null) {
             host.println("    -> Name conflict: Unmapping old clip for \"$currentSlotName\"")
-            deviceClipMap.remove(currentSlotName)
+            deviceSlotClipMap.remove(currentSlotName)
           }
           host.println("    -> Mapping device clip: \"$currentSlotName\"")
-          deviceClipMap[currentSlotName] = DeviceSlotInfo(slot, track)
+          deviceSlotClipMap[currentSlotName] = DeviceSlotInfo(slot, track)
         }
       }
-    } catch (e: Exception) {
-      host.println("Error in setupDeviceSlotMappingLogic for slot $slotIndex: ${e.message}")
+    }) {
+      "Error in setupDeviceSlotMapping for slot $slotIndex: ${it.message}" to Unit
     }
   }
 
-  // Helper to handle stop command logic
-  private fun handleStopCommand(slotState: FireSlotState, name: String): Boolean {
-    if (!name.startsWith(stopKeyword)) {
-      return false // Not a stop command
+  private fun handleLaunchCommand(deviceClipName: String) {
+    if (!transport.isPlaying.get()) {
+      return
     }
-
-    val trackName = name.substring(stopKeyword.length).trim()
-    if (trackName.isNotEmpty()) {
-      host.println("   -> Stop command detected for track \"$trackName\".")
-      val deviceInfo = deviceClipMap.values.find { info -> info.track.name().get() == trackName }
-      if (deviceInfo != null) {
-        host.println("   -> Found device track. Stopping playback.")
-        deviceInfo.track.stop()
-      } else {
-        host.println("   -> Could not find device track named \"$trackName\".")
-      }
-    } else {
-      host.println("   -> Invalid stop command format. Expected \"$stopKeyword<TrackName>\".")
-    }
-    slotState.deviceSlot = null // Clear associated device slot regardless of success
-    return true // Stop command was handled (or attempted)
+    findAndLaunchDeviceClip(deviceClipName)
   }
 
-  // Helper to handle launch command logic
-  private fun handleLaunchCommand(slotState: FireSlotState, name: String) {
-    if (!isTransportPlaying) {
-      host.println("   -> Transport not playing. Launch postponed for device clip \"$name\".")
-      return // Don't launch if transport is stopped
-    }
-    val isDeviceMapped = deviceClipMap.containsKey(name)
-    host.println("   -> Play event check on name change. (Transport Playing: $isTransportPlaying, Name Known: true, Device Mapped: $isDeviceMapped)")
-    if (isDeviceMapped) {
-      host.println("   -> Preconditions met. Launching device clip \"$name\".")
-      slotState.deviceSlot = findAndLaunchDeviceClip(name)
-    } else {
-      host.println("   -> Launch postponed: Device clip \"$name\" not yet mapped.")
-    }
-  }
-
-  // --- Transport State Change Handler ---
-  private fun handleTransportStateChange(transportIsPlaying: Boolean) {
-    host.println("Handling transport state change. Transport isPlaying: $transportIsPlaying")
-    fireSlotsState.forEach { (_, parentMap) ->
-      parentMap.forEach { (_, childMap) ->
-        childMap.forEach { (_, slotState) ->
-          if (slotState.isPlaying == true && slotState.name.isNotEmpty() && slotState.name != stopKeyword) {
-            if (transportIsPlaying) {
-              host.println("   Transport started. Re-triggering device clip for pattern: ${slotState.name}")
-              slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
-            } else {
-              host.println("   Transport stopped. Stopping device clip for pattern: ${slotState.name}")
-              findAndStopDeviceClip(slotState.name)
-              // We keep slotState.deviceSlot as is, because the pattern slot itself is still "playing"
-              // and should resume if transport starts again, unless the pattern slot itself stops.
+  private fun setupTransportStateChangedHandler() {
+    fun handleTransportStateChange(transportIsPlaying: Boolean) {
+      firePatternSlotClipState.forEach { (_, parentMap) ->
+        parentMap.forEach { (_, childMap) ->
+          childMap.forEach { (_, slotState) ->
+            if (slotState.isPlaying == true && slotState.name.isNotEmpty() && slotState.name != settings.stopKeyword.get()) {
+              if (transportIsPlaying) {
+                findAndLaunchDeviceClip(slotState.name)
+              } else {
+                findAndStopDeviceClip(slotState.name)
+              }
             }
           }
         }
       }
     }
+
+    transport.isPlaying().markInterested()
+    transport.isPlaying().addValueObserver { playing ->
+      handleTransportStateChange(playing)
+    }
   }
 
-  private fun setupFireSlotNameLogic(
+  private fun setupFirePatternSlotNameChangedHandler(
     slotState: FireSlotState,
     name: String,
     parentTrackIndex: Int,
     childTrackIndex: Int,
     slotIndex: Int
   ) {
-    try {
+    tryCatch({
       val oldName = slotState.name
       slotState.name = name
 
-      host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] name changed from \"${oldName.ifEmpty { "<init>" }}\" to \"${name.ifEmpty { "<empty>" }}\"")
+      logger.logMessage(
+        "Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] name changed from \"${oldName.ifEmpty { "<init>" }}\" to \"${name.ifEmpty { "<empty>" }}\"",
+        Severity.trace
+      )
 
-      // Only process if the slot is currently playing and has a name
       if (name.isEmpty() || slotState.isPlaying != true) {
-        return
+        return@tryCatch
       }
 
-      // Try to handle as a stop command first
-      if (handleStopCommand(slotState, name)) {
-        return // Stop command handled, nothing more to do
+      if (handleStopCommand(name)) {
+        return@tryCatch
       }
 
-      // If not a stop command, handle as a potential launch command
-      handleLaunchCommand(slotState, name)
+      handleLaunchCommand(name)
 
-    } catch (e: Exception) {
-      host.println("Error in fire slot name logic: ${e.message}")
+    }) {
+      "Error in setupFirePatternSlotNameChangedHandler: ${it.message}" to Unit
     }
   }
 
-  private fun setupFireSlotPlayingLogic(
+  private fun handlePatternSlotPlayingStateChanged(
     slotState: FireSlotState,
-    isPlaying: Boolean,
-    parentTrackIndex: Int,
-    childTrackIndex: Int,
-    slotIndex: Int
+    isPlaying: Boolean
   ) {
-    try {
-      // --- Initial State Handling ---
+    tryCatch({
+      val isTransportPlaying = transport.isPlaying.get()
       if (slotState.isPlaying == null) {
         slotState.isPlaying = isPlaying
-        host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] initial isPlaying state: $isPlaying")
-        if (isPlaying) {
-          val isNameKnown = slotState.name.isNotEmpty()
-          val isDeviceMapped = isNameKnown && deviceClipMap.containsKey(slotState.name)
-          host.println("   -> Initial state is playing. Checking preconditions (Transport Playing: $isTransportPlaying, Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
-          if (isNameKnown && isDeviceMapped && isTransportPlaying) { // Check transport state
-            host.println("   -> Preconditions met for initial state. Launching device clip \"${slotState.name}\".")
-            slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
-          } else {
-            host.println("   -> Preconditions not met for initial state launch (Transport Playing: $isTransportPlaying).")
-          }
-        }
-        return
       }
+      if (isPlaying == slotState.isPlaying) return@tryCatch
 
-      // --- State Change Handling ---
-      if (isPlaying == slotState.isPlaying) return // No change
-
+      // isPlaying changed
       slotState.isPlaying = isPlaying
-      val currentName = slotState.name.ifEmpty { "<name unknown>" }
-      host.println("Fire slot [$parentTrackIndex, $childTrackIndex, $slotIndex] \"$currentName\" isPlaying changed to: $isPlaying")
+      val currentName = slotState.name
 
       if (isPlaying) {
-        // --- Handle Play Event ---
-        val isNameKnown = slotState.name.isNotEmpty()
-        val isDeviceMapped = isNameKnown && deviceClipMap.containsKey(slotState.name)
-        host.println("   -> Play event. Checking preconditions (Transport Playing: $isTransportPlaying, Name Known: $isNameKnown, Device Mapped: $isDeviceMapped)")
-        if (isNameKnown && isDeviceMapped && isTransportPlaying) { // Check transport state
-          host.println("   -> Preconditions met. Launching device clip \"${slotState.name}\".")
-          slotState.deviceSlot = findAndLaunchDeviceClip(slotState.name)
-        } else {
-          host.println("   -> Launch postponed: Device clip \"${slotState.name}\" not yet mapped or transport stopped.")
+        if (isTransportPlaying) {
+          findAndLaunchDeviceClip(slotState.name)
         }
       } else {
-        // --- Handle Stop Event ---
-        host.println("   -> Stop event for pattern \"$currentName\"")
-
-        // If this was a stop command clip finishing, we don't need to do anything further
-        if (currentName.startsWith(stopKeyword)) {
-          host.println("   -> Stop command clip finished. No further action needed.")
-          slotState.deviceSlot = null // Ensure reference is cleared
-          return
+        if (currentName.startsWith(settings.stopKeyword.get())) {
+          return@tryCatch
         }
 
-        // Otherwise, stop the associated device clip IF the setting is OFF
-        if (this.keepDevicesPlayingSetting?.get() == false) {
-          host.println("   -> 'Keep Devices Playing' is OFF. Stopping device clip for pattern \"${slotState.name}\".")
+        if (!settings.keepDevicesPlaying.get()) {
           findAndStopDeviceClip(slotState.name)
-        } else {
-          host.println("   -> 'Keep Devices Playing' is ON. Device clip for pattern \"${slotState.name}\" will continue.")
         }
-        // We still clear the script's direct reference to the deviceSlot here because this *pattern slot* has stopped.
-        // The device clip might continue playing due to the setting, but this specific pattern instance is done triggering it.
-        slotState.deviceSlot = null
-
-        // Note: We removed the complex logic trying to find the track via name again,
-        // as findAndStopDeviceClip should handle the case where the name->device mapping exists.
-        // If slotState.deviceSlot was already null, findAndStopDeviceClip uses the name mapping.
       }
-    } catch (e: Exception) {
-      host.println("Error in fire slot isPlaying logic: ${e.message}")
+    }) {
+      "Error in fire slot isPlaying logic: ${it.message}" to Unit
     }
   }
 
-  override fun exit() {
-      host.println("=== Pattern Tracker Extension v$versionFromProperties Exited ===")
+  fun exit() {
+    logger.logMessage("=== Pattern Tracker Extension v$versionFromProperties Exited ===", Severity.info)
   }
-
-  override fun flush() {
-    // Currently unused
-  }
-} 
+}
