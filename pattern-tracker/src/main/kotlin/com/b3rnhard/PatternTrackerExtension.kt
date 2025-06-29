@@ -243,7 +243,7 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
   private fun handleStopCommand(stopPrefixedClipTrackName: String): Boolean {
     val stopKeyword = settings.stopKeyword.get()
 
-    if (stopKeyword == null || !stopPrefixedClipTrackName.startsWith(stopKeyword)) {
+    if (stopKeyword.isNullOrBlank() || !stopPrefixedClipTrackName.startsWith(stopKeyword)) {
       return false
     }
 
@@ -490,7 +490,6 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
         if (existingMappingForName == null || existingMappingForName.clipLauncherSlot != slot) {
           if (existingMappingForName != null) {
             host.println("    -> Name conflict: Unmapping old clip for \"$currentSlotName\"")
-            deviceSlotClipMap.remove(currentSlotName)
           }
           host.println("    -> Mapping device clip: \"$currentSlotName\"")
           deviceSlotClipMap[currentSlotName] = DeviceSlotInfo(slot, track)
