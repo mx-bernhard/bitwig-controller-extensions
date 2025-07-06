@@ -6,7 +6,7 @@ import com.b3rnhard.sharedcomponents.getEnumBasedBooleanSetting
 import com.bitwig.extension.controller.ControllerExtension
 import com.bitwig.extension.controller.api.*
 
-fun SettableRangedValue.intValue(): Int = this.get().toInt()
+fun SettableRangedValue.intValue(): Int = this.raw.toInt()
 
 data class Observation(
   val tracksPerGroupAmount: SettableRangedValue,
@@ -18,7 +18,8 @@ data class Settings(
   val observation: Observation,
   val stopKeyword: SettableStringValue,
   val keepDevicesPlaying: ISettableBooleanValue,
-  val remapSignal: Unit
+  val remapSignal: Signal,
+  val logSeverity: SettableEnumValue
 )
 
 data class DeviceSlotInfo(val clipLauncherSlot: ClipLauncherSlot, val track: Track)
@@ -44,7 +45,18 @@ class PatternTrackerExtension(definition: PatternTrackerExtensionDefinition, hos
 }
 
 class PatternTrackerExtensionImplementation(val host: ControllerHost) {
-  private val logger: Logger = Logger(host, { Severity.warning })
+
+  private val logger: Logger = Logger(host, {
+    when (settings.logSeverity.get()) {
+      "info" -> Severity.info
+      "error" -> Severity.error
+      "warning" -> Severity.warning
+      "trace" -> Severity.trace
+      "none" -> Severity.none
+      else -> Severity.warning
+    }
+  })
+
   private val devicesGroupName = "Devices"
   private val firePatternGroupName = "Patterns"
   private val settings: Settings = setupSettings()
@@ -65,7 +77,6 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
     tryCatch({
       setupTransportStateChangedHandler()
 
-      val settings = setupSettings()
       val project = host.project
       val rootTrackGroup = project.rootTrackGroup
 
@@ -362,8 +373,19 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
       setupObservationWindowSettings(),
       setupStopKeywordSetting(),
       setupKeepDevicesPlayingSetting(),
-      setupRemapSetting()
+      setupRemapSetting(),
+      setupLogSeveritySetting()
     )
+  }
+
+  private fun setupLogSeveritySetting(): SettableEnumValue {
+    val setting = host.preferences.getEnumSetting(
+      "Log severity",
+      "Common",
+      arrayOf("none", "error", "warning", "info", "trace"),
+      "error"
+    )
+    return setting
   }
 
   private fun setupObservationWindowSettings(): Observation {
@@ -396,11 +418,18 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
     )
 
     fun addObserverForSetting(name: String, setting: SettableRangedValue) {
+      var chokeReport = true
+      var lastKnownValue = setting.intValue()
       setting.addRawValueObserver { value: Double ->
-        logger.logMessage(
-          "Number of $name changed to ${value.toInt()}. " +
-                  "Please restart the extension for changes to take effect.", Severity.info
-        )
+        if (setting.intValue() != lastKnownValue && !chokeReport) {
+          logger.logMessage(
+            message = "Number of $name changed to ${value.toInt()}. " +
+                    "Please restart the extension for changes to take effect.", severity = Severity.info, key = name
+
+          )
+          lastKnownValue = setting.intValue()
+        }
+        chokeReport = false
       }
     }
     addObserverForSetting("tracks", tracksPerGroupAmountSetting!!)
@@ -409,13 +438,14 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
     return Observation(tracksPerGroupAmountSetting, rootTracksAmountSetting, slotsAmountPerTrackSetting)
   }
 
-  private fun setupRemapSetting() {
+  private fun setupRemapSetting(): Signal {
     val remapAction = host.documentState.getSignalSetting(
       "Mapping",
       "Remap Clips",
       "Scan tracks and map clips by name"
     )
     remapAction.addSignalObserver(::remapClips)
+    return remapAction
   }
 
   private fun setupStopKeywordSetting(): SettableStringValue {
@@ -434,11 +464,6 @@ class PatternTrackerExtensionImplementation(val host: ControllerHost) {
       false
     )
 
-    fun booleanToString(value: Boolean): String = if (value) "enabled" else "disabled"
-
-    setting.addValueObserver { value ->
-      logger.logMessage("Keep Devices Playing: ${booleanToString(value)}", Severity.info)
-    }
     return setting
   }
 
